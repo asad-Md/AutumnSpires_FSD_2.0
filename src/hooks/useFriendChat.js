@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 export function useFriendChat(friendId) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const { user } = useUserStore();
+  const { user, updateFriend } = useUserStore();
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -30,6 +30,26 @@ export function useFriendChat(friendId) {
         const data = await response.json();
         if (data.success) {
           setMessages(data.chats);
+
+          // Mark unread messages as read
+          const unreadIds = data.chats
+            .filter((m) => !m.is_read && m.sender_id === friendId)
+            .map((m) => m.id);
+
+          if (unreadIds.length > 0) {
+            await supabase
+              .from("Chat")
+              .update({ is_read: true })
+              .in("id", unreadIds);
+
+            // Update local store for sidebar
+            const lastMsg = data.chats[data.chats.length - 1];
+            if (lastMsg) {
+              updateFriend(friendId, {
+                latestMessage: { ...lastMsg, is_read: true },
+              });
+            }
+          }
         }
       } catch (error) {
         console.error("Error fetching messages:", error);
@@ -108,6 +128,16 @@ export function useFriendChat(friendId) {
           setMessages((prev) => {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
             return [...prev, messageWithDetails];
+          });
+
+          // Mark as read
+          await supabase
+            .from("Chat")
+            .update({ is_read: true })
+            .eq("id", payload.new.id);
+
+          updateFriend(friendId, {
+            latestMessage: { ...payload.new, is_read: true },
           });
         }
       )

@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect } from "react";
 import { useSidebarStore } from "@/store/sidebarStore";
 import { useUserStore } from "@/store/userStore";
+import { useChatStore } from "@/store/chatStore";
 import { supabase } from "@/lib/supabase";
 import SidebarHeader from "./SidebarHeader";
 import TabSwitcher from "./TabSwitcher";
@@ -45,8 +46,14 @@ export default function Sidebar() {
           filter: `receiver_id=eq.${user.id}`,
         },
         (payload) => {
+          const selectedChat = useChatStore.getState().selectedChat;
+          const isChatOpen = selectedChat?.id === payload.new.sender_id;
+
           updateFriend(payload.new.sender_id, {
-            latestMessage: payload.new,
+            latestMessage: {
+              ...payload.new,
+              is_read: isChatOpen ? true : payload.new.is_read,
+            },
           });
         }
       )
