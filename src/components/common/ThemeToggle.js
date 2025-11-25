@@ -4,15 +4,18 @@ import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import { motion } from "motion/react";
 
+import { usePathname } from "next/navigation";
+
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  if (!mounted) return null;
+  if (!mounted || pathname !== "/") return null;
 
   return (
     <motion.button
