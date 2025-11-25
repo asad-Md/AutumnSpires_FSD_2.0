@@ -22,7 +22,15 @@ export default function FriendsList({ searchText = "" }) {
   return (
     <div className="flex-1 overflow-y-auto px-2">
       {filtered.map((friend) => {
-        const latestMessage = getLatestMessageForFriend(friend.id);
+        const storeMessage = getLatestMessageForFriend(friend.id);
+        const apiMessage = friend.latestMessage;
+        
+        let latestMessage = apiMessage;
+        if (storeMessage) {
+            if (!apiMessage || new Date(storeMessage.created_at) > new Date(apiMessage.created_at)) {
+                latestMessage = storeMessage;
+            }
+        }
         return (
           <FriendItem
             key={friend.id}

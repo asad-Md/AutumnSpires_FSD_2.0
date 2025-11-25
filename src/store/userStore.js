@@ -36,6 +36,13 @@ export const useUserStore = create(
           user: state.user ? { ...state.user, ...updates } : null,
         })),
 
+      updateFriend: (friendId, updates) =>
+        set((state) => ({
+          friends: state.friends.map((f) =>
+            f.id === friendId ? { ...f, ...updates } : f
+          ),
+        })),
+
       setFriends: (friends) => set({ friends }),
 
       fetchFriendRequests: async (userId) => {

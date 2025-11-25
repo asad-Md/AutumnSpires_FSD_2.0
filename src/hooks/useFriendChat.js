@@ -15,6 +15,10 @@ export function useFriendChat(friendId) {
   };
 
   useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
     if (!friendId || !user) return;
 
     const fetchMessages = async () => {
@@ -31,7 +35,6 @@ export function useFriendChat(friendId) {
         console.error("Error fetching messages:", error);
       } finally {
         setIsLoading(false);
-        scrollToBottom();
       }
     };
 
@@ -72,7 +75,6 @@ export function useFriendChat(friendId) {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
             return [...prev, messageWithDetails];
           });
-          scrollToBottom();
         }
       )
       .on(
@@ -107,7 +109,6 @@ export function useFriendChat(friendId) {
             if (prev.some((m) => m.id === payload.new.id)) return prev;
             return [...prev, messageWithDetails];
           });
-          scrollToBottom();
         }
       )
       .on(

@@ -70,9 +70,47 @@ export async function GET(request) {
       );
     }
 
+    // Fetch latest message for each friend
+    const friendsWithMessages = await Promise.all(
+      friends.map(async (friend) => {
+        // Query 1: Sent by me to friend
+        const { data: sent } = await supabaseAdmin
+          .from("Chat")
+          .select("*")
+          .eq("sender_id", userId)
+          .eq("receiver_id", friend.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        // Query 2: Received by me from friend
+        const { data: received } = await supabaseAdmin
+          .from("Chat")
+          .select("*")
+          .eq("sender_id", friend.id)
+          .eq("receiver_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        const lastSent = sent?.[0];
+        const lastReceived = received?.[0];
+        
+        let latest = null;
+        if (lastSent && lastReceived) {
+            latest = new Date(lastSent.created_at) > new Date(lastReceived.created_at) ? lastSent : lastReceived;
+        } else {
+            latest = lastSent || lastReceived || null;
+        }
+
+        return {
+          ...friend,
+          latestMessage: latest,
+        };
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      friends,
+      friends: friendsWithMessages,
     });
   } catch (error) {
     console.error("Fetch friends error:", error);

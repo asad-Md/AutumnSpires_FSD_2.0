@@ -51,6 +51,18 @@ export const useChatStore = create(
     }),
     {
       name: "chat-storage",
+      version: 2,
+      migrate: (persistedState, version) => {
+        if (version < 2) {
+          return {
+            ...persistedState,
+            chats: [],
+            selectedChat: null,
+            selectedRoom: null,
+          };
+        }
+        return persistedState;
+      },
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },

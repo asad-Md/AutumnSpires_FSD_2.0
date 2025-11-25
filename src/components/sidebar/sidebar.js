@@ -1,7 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import { useEffect } from "react";
 import { useSidebarStore } from "@/store/sidebarStore";
+import { useUserStore } from "@/store/userStore";
+import { supabase } from "@/lib/supabase";
 import SidebarHeader from "./SidebarHeader";
 import TabSwitcher from "./TabSwitcher";
 import SearchButton from "./SearchInput";
@@ -25,6 +28,48 @@ export default function Sidebar() {
     isHidden,
     hasHydrated,
   } = useSidebarResize(256);
+
+  const { user, updateFriend } = useUserStore();
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`global_messages_sidebar:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "Chat",
+          filter: `receiver_id=eq.${user.id}`,
+        },
+        (payload) => {
+          updateFriend(payload.new.sender_id, {
+            latestMessage: payload.new,
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "Chat",
+          filter: `sender_id=eq.${user.id}`,
+        },
+        (payload) => {
+          updateFriend(payload.new.receiver_id, {
+            latestMessage: payload.new,
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, updateFriend]);
 
   if (!hasHydrated) {
     return <SidebarSkeleton />;

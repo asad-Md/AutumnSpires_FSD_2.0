@@ -58,6 +58,12 @@ export function useWebRTC(roomId) {
           console.log(`⚠️ Already making offer for ${peerId}, skipping manual negotiation`);
           continue;
         }
+
+        // Check signaling state to prevent "have-remote-offer" errors
+        if (pc.signalingState !== "stable") {
+           console.log(`⚠️ Signaling state is ${pc.signalingState}, skipping manual negotiation for ${peerId}`);
+           continue;
+        }
         
         try {
           makingOfferRef.current[peerId] = true;
@@ -304,6 +310,12 @@ export function useWebRTC(roomId) {
         if (makingOfferRef.current[remoteUserId]) {
           console.log(`⚠️ Already making offer for ${remoteUserId}, skipping onnegotiationneeded`);
           return;
+        }
+        
+        // Check signaling state to prevent "have-remote-offer" errors
+        if (pc.signalingState !== "stable") {
+           console.log(`⚠️ Signaling state is ${pc.signalingState}, skipping onnegotiationneeded for ${remoteUserId}`);
+           return;
         }
         
         try {

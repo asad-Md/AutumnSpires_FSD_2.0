@@ -5,6 +5,7 @@ import { useUserStore } from "@/store/userStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
 import { X, Send, UserMinus } from "lucide-react";
 import { useState, useEffect } from "react";
+import { motion } from "motion/react";
 
 export default function FriendChat() {
   const { selectedChat, clearSelection } = useChatStore();
@@ -111,8 +112,11 @@ export default function FriendChat() {
               {messages.map((chat) => {
                 const isCurrentUser = chat.sender_id === user?.id;
                 return (
-                  <div
+                  <motion.div
                     key={chat.id}
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.2 }}
                     className={`flex gap-2 ${
                       isCurrentUser ? "flex-row-reverse" : "flex-row"
                     }`}
@@ -138,7 +142,7 @@ export default function FriendChat() {
                         {formatTime(chat.created_at)}
                       </span>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
               <div ref={messagesEndRef} />
