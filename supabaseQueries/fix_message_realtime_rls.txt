@@ -1,0 +1,16 @@
+-- Enable Realtime for Message table
+alter publication supabase_realtime add table "Message";
+
+-- Allow authenticated users to insert messages into rooms they are members of
+CREATE POLICY "message_insert_policy"
+  ON public."Message"
+  FOR INSERT
+  WITH CHECK (
+    auth.uid()::text = user_id
+    AND
+    EXISTS (
+      SELECT 1 FROM public."RoomMember"
+      WHERE room_id = "Message".room_id
+      AND user_id = auth.uid()::text
+    )
+  );

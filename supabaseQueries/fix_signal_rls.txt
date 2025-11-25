@@ -1,0 +1,27 @@
+-- Allow authenticated users to insert signals where they are the sender
+CREATE POLICY "signal_insert_policy"
+  ON public."Signal"
+  FOR INSERT
+  WITH CHECK (
+    auth.uid()::text = sender_id
+  );
+
+-- Allow users to delete signals they received (marking as consumed usually involves deleting or updating)
+-- If the app updates 'consumed' flag:
+CREATE POLICY "signal_update_policy"
+  ON public."Signal"
+  FOR UPDATE
+  USING (
+    auth.uid()::text = receiver_id
+  )
+  WITH CHECK (
+    auth.uid()::text = receiver_id
+  );
+
+-- If the app deletes consumed signals:
+CREATE POLICY "signal_delete_policy"
+  ON public."Signal"
+  FOR DELETE
+  USING (
+    auth.uid()::text = receiver_id OR auth.uid()::text = sender_id
+  );

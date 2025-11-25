@@ -1,0 +1,112 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.Chat (
+  id bigint NOT NULL DEFAULT nextval('"Chat_id_seq"'::regclass),
+  sender_id text NOT NULL,
+  receiver_id text NOT NULL,
+  content text NOT NULL,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  edited_at timestamp without time zone,
+  is_read boolean NOT NULL DEFAULT false,
+  CONSTRAINT Chat_pkey PRIMARY KEY (id),
+  CONSTRAINT Chat_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.User(id),
+  CONSTRAINT Chat_receiver_id_fkey FOREIGN KEY (receiver_id) REFERENCES public.User(id)
+);
+CREATE TABLE public.Friendship (
+  id integer NOT NULL DEFAULT nextval('"Friendship_id_seq"'::regclass),
+  requesterId text NOT NULL,
+  addresseeId text NOT NULL,
+  createdAt timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status USER-DEFINED NOT NULL DEFAULT 'pending'::"FriendshipStatus",
+  CONSTRAINT Friendship_pkey PRIMARY KEY (id),
+  CONSTRAINT Friendship_requesterId_fkey FOREIGN KEY (requesterId) REFERENCES public.User(id),
+  CONSTRAINT Friendship_addresseeId_fkey FOREIGN KEY (addresseeId) REFERENCES public.User(id)
+);
+CREATE TABLE public.Message (
+  id bigint NOT NULL DEFAULT nextval('"Message_id_seq"'::regclass),
+  room_id text NOT NULL,
+  user_id text NOT NULL,
+  content text NOT NULL,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  edited_at timestamp without time zone,
+  CONSTRAINT Message_pkey PRIMARY KEY (id),
+  CONSTRAINT Message_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.Room(id),
+  CONSTRAINT Message_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.User(id)
+);
+CREATE TABLE public.OTP (
+  id text NOT NULL,
+  email text NOT NULL,
+  otp text NOT NULL,
+  type text NOT NULL,
+  username text,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at timestamp without time zone NOT NULL,
+  verified boolean NOT NULL DEFAULT false,
+  token text NOT NULL,
+  CONSTRAINT OTP_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.Presence (
+  id integer NOT NULL DEFAULT nextval('"Presence_id_seq"'::regclass),
+  user_id text NOT NULL,
+  room_id text NOT NULL,
+  last_seen timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  is_online boolean NOT NULL DEFAULT false,
+  CONSTRAINT Presence_pkey PRIMARY KEY (id),
+  CONSTRAINT Presence_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.User(id),
+  CONSTRAINT Presence_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.Room(id)
+);
+CREATE TABLE public.Room (
+  id text NOT NULL,
+  name text NOT NULL,
+  description text,
+  is_private boolean NOT NULL DEFAULT false,
+  created_by text,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT Room_pkey PRIMARY KEY (id),
+  CONSTRAINT Room_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.User(id)
+);
+CREATE TABLE public.RoomMember (
+  id integer NOT NULL DEFAULT nextval('"RoomMember_id_seq"'::regclass),
+  user_id text NOT NULL,
+  room_id text NOT NULL,
+  joined_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  role text NOT NULL DEFAULT 'member'::text,
+  CONSTRAINT RoomMember_pkey PRIMARY KEY (id),
+  CONSTRAINT RoomMember_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.User(id),
+  CONSTRAINT RoomMember_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.Room(id)
+);
+CREATE TABLE public.Signal (
+  id bigint NOT NULL DEFAULT nextval('"Signal_id_seq"'::regclass),
+  room_id text NOT NULL,
+  sender_id text NOT NULL,
+  receiver_id text NOT NULL,
+  type text NOT NULL,
+  data jsonb NOT NULL,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  consumed boolean NOT NULL DEFAULT false,
+  CONSTRAINT Signal_pkey PRIMARY KEY (id),
+  CONSTRAINT Signal_room_id_fkey FOREIGN KEY (room_id) REFERENCES public.Room(id),
+  CONSTRAINT Signal_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.User(id),
+  CONSTRAINT Signal_receiver_id_fkey FOREIGN KEY (receiver_id) REFERENCES public.User(id)
+);
+CREATE TABLE public.User (
+  id text NOT NULL,
+  username text NOT NULL,
+  email text,
+  avatar_url text,
+  created_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  bio text,
+  CONSTRAINT User_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public._prisma_migrations (
+  id character varying NOT NULL,
+  checksum character varying NOT NULL,
+  finished_at timestamp with time zone,
+  migration_name character varying NOT NULL,
+  logs text,
+  rolled_back_at timestamp with time zone,
+  started_at timestamp with time zone NOT NULL DEFAULT now(),
+  applied_steps_count integer NOT NULL DEFAULT 0,
+  CONSTRAINT _prisma_migrations_pkey PRIMARY KEY (id)
+);

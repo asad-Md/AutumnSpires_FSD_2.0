@@ -1,0 +1,50 @@
+-- 1) Create security definer function to broadcast Chat changes
+CREATE OR REPLACE FUNCTION public.chat_broadcast_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Broadcast depending on operation
+  IF TG_OP = 'INSERT' THEN
+    PERFORM realtime.broadcast_changes(
+      'chat:' || LEAST(NEW.sender_id, NEW.receiver_id) || ':' || GREATEST(NEW.sender_id, NEW.receiver_id) || ':messages',
+      TG_OP,
+      TG_TABLE_NAME,
+      TG_TABLE_SCHEMA,
+      NEW,
+      NULL
+    );
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    PERFORM realtime.broadcast_changes(
+      'chat:' || LEAST(NEW.sender_id, NEW.receiver_id) || ':' || GREATEST(NEW.sender_id, NEW.receiver_id) || ':messages',
+      TG_OP,
+      TG_TABLE_NAME,
+      TG_TABLE_SCHEMA,
+      NEW,
+      OLD
+    );
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    PERFORM realtime.broadcast_changes(
+      'chat:' || LEAST(OLD.sender_id, OLD.receiver_id) || ':' || GREATEST(OLD.sender_id, OLD.receiver_id) || ':messages',
+      TG_OP,
+      TG_TABLE_NAME,
+      TG_TABLE_SCHEMA,
+      NULL,
+      OLD
+    );
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+EXCEPTION WHEN OTHERS THEN
+  -- Log to postgres NOTICE for debugging without failing the transaction
+  RAISE NOTICE 'chat_broadcast_trigger error: %', SQLERRM;
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Revoke execute from anon/authenticated for safety
+REVOKE EXECUTE ON FUNCTION public.chat_broadcast_trigger() FROM anon, authenticated;
+
+
+-- 3) Create index to help RLS policies and lookups
+CREATE INDEX IF NOT EXISTS idx_chat_participants ON "public"."Chat"(LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id));

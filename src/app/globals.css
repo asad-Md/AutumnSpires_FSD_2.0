@@ -1,0 +1,70 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Core palette */
+  --red: #cb3e4c;
+  --orange: #f49e4c;
+  --yellow: #f5ee9e;
+  --black: #000000;
+  --white: #ffeded;
+
+  /* Tailwind theme mappings */
+  --color-background: #ffeded;
+  --color-foreground: #000000;
+  --color-red: #cb3e4c;
+  --color-orange: #f49e4c;
+  --color-yellow: #f5ee9e;
+  --color-black: #000000;
+  --color-white: #ffeded;
+
+  /* Light mode colors */
+  --background: var(--white);
+  --foreground: var(--black);
+
+  /* Font variable from layout.js */
+  --font-unbounded: var(--font-unbounded);
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: var(--black);
+    --foreground: var(--white);
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-google-sans-flex), system-ui, sans-serif;
+  font-optical-sizing: auto;
+}
+
+.frosted {
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Custom scrollbar styling */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+}

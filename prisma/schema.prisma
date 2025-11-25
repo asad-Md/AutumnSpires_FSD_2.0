@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id               String       @id @default(uuid())
+  username         String       @unique
+  email            String?      @unique
+  avatar_url       String?
+  created_at       DateTime     @default(now())
+  bio              String?
+  receivedChats    Chat[]       @relation("ReceivedChats")
+  sentChats        Chat[]       @relation("SentChats")
+  receivedRequests Friendship[] @relation("Addressee")
+  sentRequests     Friendship[] @relation("Requester")
+  messages         Message[]
+  presences        Presence[]
+  rooms            Room[]       @relation("RoomCreator")
+  memberships      RoomMember[]
+  receivedSignals  Signal[]     @relation("Receiver")
+  sentSignals      Signal[]     @relation("Sender")
+}
+
+model Room {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  is_private  Boolean      @default(false)
+  created_by  String?
+  created_at  DateTime     @default(now())
+  messages    Message[]
+  presences   Presence[]
+  creator     User?        @relation("RoomCreator", fields: [created_by], references: [id])
+  members     RoomMember[]
+  signals     Signal[]
+}
+
+model RoomMember {
+  id        Int      @id @default(autoincrement())
+  user_id   String
+  room_id   String
+  joined_at DateTime @default(now())
+  role      String   @default("member")
+  room      Room     @relation(fields: [room_id], references: [id])
+  user      User     @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, room_id])
+}
+
+model Message {
+  id         BigInt    @id @default(autoincrement())
+  room_id    String
+  user_id    String
+  content    String
+  created_at DateTime  @default(now())
+  edited_at  DateTime?
+  room       Room      @relation(fields: [room_id], references: [id])
+  user       User      @relation(fields: [user_id], references: [id])
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model Chat {
+  id          BigInt    @id @default(autoincrement())
+  sender_id   String
+  receiver_id String
+  content     String
+  created_at  DateTime  @default(now())
+  edited_at   DateTime?
+  is_read     Boolean   @default(false)
+  receiver    User      @relation("ReceivedChats", fields: [receiver_id], references: [id])
+  sender      User      @relation("SentChats", fields: [sender_id], references: [id])
+
+  @@index([sender_id, receiver_id])
+  @@index([receiver_id, sender_id])
+  @@index([created_at])
+}
+
+model Friendship {
+  id          Int              @id @default(autoincrement())
+  requesterId String
+  addresseeId String
+  createdAt   DateTime         @default(now())
+  status      FriendshipStatus @default(pending)
+  addressee   User             @relation("Addressee", fields: [addresseeId], references: [id])
+  requester   User             @relation("Requester", fields: [requesterId], references: [id])
+
+  @@unique([requesterId, addresseeId])
+}
+
+model Signal {
+  id          BigInt   @id @default(autoincrement())
+  room_id     String
+  sender_id   String
+  receiver_id String
+  type        String
+  data        Json
+  created_at  DateTime @default(now())
+  consumed    Boolean  @default(false)
+  receiver    User     @relation("Receiver", fields: [receiver_id], references: [id])
+  room        Room     @relation(fields: [room_id], references: [id])
+  sender      User     @relation("Sender", fields: [sender_id], references: [id])
+}
+
+model Presence {
+  id        Int      @id @default(autoincrement())
+  user_id   String
+  room_id   String
+  last_seen DateTime @default(now())
+  is_online Boolean  @default(false)
+  room      Room     @relation(fields: [room_id], references: [id])
+  user      User     @relation(fields: [user_id], references: [id])
+}
+
+model OTP {
+  id         String   @id @default(uuid())
+  email      String
+  otp        String
+  token      String   @unique
+  type       String
+  username   String?
+  created_at DateTime @default(now())
+  expires_at DateTime
+  verified   Boolean  @default(false)
+
+  @@index([email, type])
+  @@index([token])
+}
+
+enum FriendshipStatus {
+  pending
+  accepted
+  blocked
+}
