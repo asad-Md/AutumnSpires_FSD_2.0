@@ -54,6 +54,49 @@ export default function RoomPage() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
   const { user } = useUserStore();
+  const { rooms, currentRoom, setCurrentRoom } = useRoomStore();
+  
+  // WebRTC and Room Messages hooks - must be called before any early returns
+  const { localStream, peers, toggleAudio, toggleVideo, onlineUsers, speakingUsers } = useWebRTC(roomId);
+  const { 
+    messages, 
+    isLoading: messagesLoading, 
+    sendMessage, 
+    messagesEndRef, 
+    typingUsers, 
+    sendTyping, 
+    addReaction, 
+    uploadFile 
+  } = useRoomMessages(roomId);
+  
+  // All useState and useRef hooks must be called before any early returns
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [newMessage, setNewMessage] = useState("");
+  const [isMuted, setIsMuted] = useState(true);
+  const [isVideoOff, setIsVideoOff] = useState(true);
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const [isVideoGridOpen, setIsVideoGridOpen] = useState(false);
+  const [gridSize, setGridSize] = useState({ width: 500, height: 400 });
+  const [selectedImage, setSelectedImage] = useState(null);
+  const fileInputRef = useRef(null);
+  
+  // Compute video stream stats
+  const activeVideoStreams = Object.values(peers).filter(p => p.isVideoEnabled).length;
+  const hasActiveVideo = !isVideoOff || activeVideoStreams > 0;
+  
+  // Find and set the current room based on roomId
+  useEffect(() => {
+    if (roomId && rooms.length > 0) {
+      const foundRoom = rooms.find(r => r.id === roomId);
+      if (foundRoom) {
+        setCurrentRoom(foundRoom);
+      }
+    }
+  }, [roomId, rooms, setCurrentRoom]);
+  
+  const room = currentRoom;
+  
   if (!room) {
     return (
       <div className="flex items-center justify-center h-screen text-white">
@@ -80,10 +123,6 @@ export default function RoomPage() {
   const handleLeave = () => {
     router.push("/home");
   };
-
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
-  const fileInputRef = useRef(null);
 
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
@@ -142,7 +181,7 @@ export default function RoomPage() {
       {/* Cozy Room Background / Placeholder */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="text-center opacity-10">
-          <div className="text-9xl mb-4">{room.icon || "🏰"}</div>
+          <div className="text-9xl mb-4">{room.icon || ""}</div>
           <h1 className="text-6xl font-bold text-white">{room.name}</h1>
         </div>
       </div>
@@ -194,12 +233,10 @@ export default function RoomPage() {
             exit={{ opacity: 0, scale: 0.9 }}
             drag
             dragMomentum={false}
-            className="absolute z-20 bg-black/80 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col"
+            className="absolute z-20 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/80 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col"
             style={{ 
               width: gridSize.width, 
-              height: gridSize.height,
-              top: "10%",
-              left: "10%"
+              height: gridSize.height
             }}
           >
             {/* Grid Header / Drag Handle */}
@@ -279,7 +316,7 @@ export default function RoomPage() {
         dragConstraints={{ left: 0, right: 0, top: -200, bottom: 200 }}
         dragMomentum={false}
         animate={{ 
-          width: isChatCollapsed ? "60px" : "320px",
+          width: isChatCollapsed ? "60px" : "380px",
           x: 0
         }}
         className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-black/60 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col transition-all duration-300"
@@ -303,12 +340,12 @@ export default function RoomPage() {
                 <div className="text-center text-gray-500 text-sm mt-4">Loading...</div>
               ) : (
                 messages.map((msg) => (
-                  <div key={msg.id} className={`flex flex-col ${msg.user_id === user?.id ? 'items-end' : 'items-start'}`}>
+                  <div key={msg.id} className={`flex flex-col w-full ${msg.user_id === user?.id ? 'items-end' : 'items-start'}`}>
                     <div className="flex items-baseline gap-2 mb-1">
                       <span className="text-[10px] text-gray-400">{msg.sender?.username || "Unknown"}</span>
                     </div>
-                    <div className="relative group">
-                      <div className={`px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words ${
+                    <div className="relative group max-w-[85%]">
+                      <div className={`px-3 py-2 rounded-2xl text-sm break-words whitespace-pre-wrap overflow-hidden ${
                         msg.user_id === user?.id 
                           ? 'bg-blue-500/40 text-white rounded-tr-sm' 
                           : 'bg-white/10 text-gray-200 rounded-tl-sm'
@@ -367,7 +404,7 @@ export default function RoomPage() {
                             ))}
                           </div>
                         )}
-                        {msg.content}
+                        <span className="inline">{msg.content}</span>
                       </div>
 
                       {/* Reaction Picker Trigger */}
@@ -561,6 +598,74 @@ export default function RoomPage() {
           </button>
         </div>
       </div>
+
+      {/* Voice Activity Indicator - shows remote users who are speaking */}
+      <AnimatePresence>
+        {Object.keys(speakingUsers || {}).some(userId => speakingUsers[userId] && userId !== user?.id) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-8 right-8 z-30"
+          >
+            <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl p-3 shadow-2xl">
+              <div className="flex items-center gap-2">
+                {Object.entries(speakingUsers || {})
+                  .filter(([odifier, isSpeaking]) => isSpeaking && odifier !== user?.id)
+                  .map(([speakerId]) => {
+                    const peerData = peers[speakerId];
+                    const displayName = peerData?.username || `User_${speakerId.slice(0, 6)}`;
+                    
+                    return (
+                      <motion.div
+                        key={speakerId}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0 }}
+                        className="relative"
+                        title={displayName}
+                      >
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold ring-2 ring-green-400 ring-offset-2 ring-offset-black/60 bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-green-400/30">
+                          {displayName.charAt(0).toUpperCase()}
+                        </div>
+                        <motion.div
+                          animate={{ scale: [1, 1.3, 1] }}
+                          transition={{ repeat: Infinity, duration: 0.8 }}
+                          className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-black/60"
+                        />
+                      </motion.div>
+                    );
+                  })}
+                <div className="ml-1 flex items-center gap-1">
+                  <motion.span
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ repeat: Infinity, duration: 1 }}
+                    className="w-1.5 h-4 bg-green-400 rounded-full"
+                  />
+                  <motion.span
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}
+                    className="w-1.5 h-6 bg-green-400 rounded-full"
+                  />
+                  <motion.span
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}
+                    className="w-1.5 h-4 bg-green-400 rounded-full"
+                  />
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Image Modal */}
+      {selectedImage && (
+        <ImageModal 
+          src={selectedImage} 
+          onClose={() => setSelectedImage(null)} 
+        />
+      )}
     </div>
   );
 }

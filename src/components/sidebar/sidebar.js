@@ -1,11 +1,13 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSidebarStore } from "@/store/sidebarStore";
 import { useUserStore } from "@/store/userStore";
 import { useChatStore } from "@/store/chatStore";
 import { supabase } from "@/lib/supabase";
+import { useE2EE } from "@/hooks/useE2EE";
+import { KeyRound } from "lucide-react";
 import SidebarHeader from "./SidebarHeader";
 import TabSwitcher from "./TabSwitcher";
 import SearchButton from "./SearchInput";
@@ -17,6 +19,7 @@ import FriendRequests from "./friends/FriendRequests";
 import RoomsList from "./spires(rooms)/RoomsList";
 import UserProfile from "./UserProfile";
 import SidebarSkeleton from "./SidebarSkeleton";
+import RecoveryPassphraseModal from "@/components/e2ee/RecoveryPassphraseModal";
 import useSidebarResize from "@/hooks/useSidebarResize";
 
 export default function Sidebar() {
@@ -31,6 +34,85 @@ export default function Sidebar() {
   } = useSidebarResize(256);
 
   const { user, updateFriend } = useUserStore();
+  
+  // E2EE state
+  const {
+    needsRecovery,
+    needsPassphraseSetup,
+    hasBackup,
+    isLoading: e2eeLoading,
+    error: e2eeError,
+    backupPrivateKey,
+    restorePrivateKey,
+    skipRecoveryAndGenerateNew,
+    forceRecovery,
+  } = useE2EE(user?.id);
+  
+  const [showRecoveryModal, setShowRecoveryModal] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState(null);
+  
+  // Show modal when recovery or setup is needed
+  useEffect(() => {
+    if (needsRecovery || needsPassphraseSetup) {
+      setShowRecoveryModal(true);
+    }
+  }, [needsRecovery, needsPassphraseSetup]);
+  
+  const handleSetupPassphrase = async (passphrase) => {
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    try {
+      await backupPrivateKey(passphrase);
+      setShowRecoveryModal(false);
+    } catch (err) {
+      setRecoveryError(err.message);
+      throw err;
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+  
+  const handleRecoverWithPassphrase = async (passphrase) => {
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    try {
+      await restorePrivateKey(passphrase);
+      setShowRecoveryModal(false);
+    } catch (err) {
+      setRecoveryError(err.message);
+      throw err;
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+  
+  const handleSkipRecovery = async () => {
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    try {
+      await skipRecoveryAndGenerateNew();
+      setShowRecoveryModal(false);
+    } catch (err) {
+      setRecoveryError(err.message);
+      throw err;
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+  
+  const handleForceRecovery = async () => {
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    try {
+      await forceRecovery();
+      setShowRecoveryModal(true);
+    } catch (err) {
+      setRecoveryError(err.message);
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!user?.id) return;
@@ -135,6 +217,25 @@ export default function Sidebar() {
           )}
         </AnimatePresence>
 
+        {/* Key Recovery Button - show when not collapsed */}
+        {!isCollapsed && (
+          <div className="px-4 py-2 border-t border-white/10">
+            <button
+              onClick={handleForceRecovery}
+              disabled={recoveryLoading || !hasBackup}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs rounded-lg transition-colors ${
+                hasBackup 
+                  ? "text-white/60 hover:text-white hover:bg-white/5" 
+                  : "text-white/30 cursor-not-allowed"
+              }`}
+              title={hasBackup ? "Re-enter recovery passphrase to restore encryption keys" : "No backup available"}
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>Restore Encryption Keys</span>
+            </button>
+          </div>
+        )}
+
         <UserProfile isCollapsed={isCollapsed} />
 
         {/* Resize Handle */}
@@ -155,6 +256,18 @@ export default function Sidebar() {
           <div className="absolute top-1/2 left-4 -translate-y-1/2 w-1 h-10 bg-white/10 group-hover:bg-white/30 group-active:bg-white/40 rounded-full transition-colors" />
         </div>
       )}
+      
+      {/* E2EE Recovery/Setup Modal */}
+      <RecoveryPassphraseModal
+        isOpen={showRecoveryModal}
+        mode={needsRecovery ? "recovery" : "setup"}
+        onSetupPassphrase={handleSetupPassphrase}
+        onRecoverWithPassphrase={handleRecoverWithPassphrase}
+        onSkipRecovery={handleSkipRecovery}
+        onClose={needsPassphraseSetup ? () => setShowRecoveryModal(false) : null}
+        isLoading={recoveryLoading}
+        error={recoveryError}
+      />
     </>
   );
 }

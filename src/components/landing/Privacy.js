@@ -16,7 +16,7 @@ export default function Privacy() {
             viewport={{ once: true }}
             transition={{ duration: 0.8 }}
           >
-            <h2 className="text-4xl md:text-6xl font-bold mb-8 tracking-tight text-black dark:text-white transition-colors duration-300">
+            <h2 className="text-4xl md:text-4xl font-bold mb-8 tracking-tight text-black dark:text-white transition-colors duration-300">
               Your Data is <br />
               <span className="text-neutral-500">None of Our Business.</span>
             </h2>

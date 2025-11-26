@@ -15,10 +15,16 @@ export default function FriendItem({ friend, latestMessage, isOnline }) {
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
   const hasUnreadMessage = latestMessage && !latestMessage.is_read && latestMessage.sender_id === friend.id;
+
+  // Get display content for latest message
+  const getDisplayContent = () => {
+    if (!latestMessage) return friend.bio || 'No messages yet';
+    return latestMessage.content;
+  };
 
   return (
     <div 
@@ -47,7 +53,7 @@ export default function FriendItem({ friend, latestMessage, isOnline }) {
           </div>
           <div className="flex items-center gap-2">
             <p className="text-gray-400 text-xs truncate">
-              {latestMessage ? latestMessage.content : friend.bio || 'No messages yet'}
+              {getDisplayContent()}
             </p>
             {hasUnreadMessage && (
               <div className="w-2 h-2 bg-white rounded-full mr-1 shrink-0"></div>

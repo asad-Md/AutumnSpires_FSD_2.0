@@ -36,7 +36,7 @@ export default function RootLayout({ children }) {
             }}
           />
           <div className="relative z-10 flex flex-col items-center justify-center w-full">
-            <h1 className="text-gray-800 dark:text-white text-2xl font-bold font-stretch-150% mb-12 tracking-wider absolute top-4 transition-colors">
+            <h1 className="text-white text-2xl font-bold font-stretch-150% mb-12 tracking-wider absolute top-4 transition-all duration-300 ease-in-out">
               AUTUMN SPIRES
             </h1>
             {children}

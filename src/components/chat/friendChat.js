@@ -3,7 +3,7 @@
 import { useChatStore } from "@/store/chatStore";
 import { useUserStore } from "@/store/userStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
-import { X, Send, UserMinus, Smile, Paperclip, Image as ImageIcon, FileText, Download } from "lucide-react";
+import { X, Send, UserMinus, Smile, Paperclip, Image as ImageIcon, FileText, Download, Lock, LockOpen } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import ImageModal from "@/components/common/ImageModal";
@@ -15,7 +15,15 @@ export default function FriendChat() {
   const [selectedImage, setSelectedImage] = useState(null);
   
   // Use the hook for real data
-  const { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction, uploadFile } = useFriendChat(selectedChat?.id);
+  const { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction, uploadFile, e2eeEnabled } = useFriendChat(selectedChat?.id);
+
+  // Debug: log messages when they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1];
+      console.log("[FriendChat] Last message in state:", lastMsg.id, "content:", lastMsg.content?.substring(0, 50));
+    }
+  }, [messages]);
 
   const handleUnfriend = async () => {
     if (
@@ -52,7 +60,7 @@ export default function FriendChat() {
 
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString("en-US", {
+    return date.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
@@ -110,9 +118,16 @@ export default function FriendChat() {
               {getAvatarDisplay(selectedChat)}
             </div>
             <div>
-              <h2 className="text-white font-medium">
-                {selectedChat.username}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-white font-medium">
+                  {selectedChat.username}
+                </h2>
+                {e2eeEnabled && (
+                  <div className="flex items-center gap-1 text-green-400" title="End-to-end encrypted">
+                    <Lock className="w-3 h-3" />
+                  </div>
+                )}
+              </div>
               <p className={`text-xs ${onlineUsers.includes(selectedChat.id) ? 'text-green-400' : 'text-gray-400'}`}>
                 {onlineUsers.includes(selectedChat.id) ? 'Online' : 'Offline'}
               </p>
@@ -168,9 +183,9 @@ export default function FriendChat() {
                         isCurrentUser ? "items-end" : "items-start"
                       } max-w-[70%]`}
                     >
-                      <div className="relative group">
+                      <div className="relative group w-full">
                         <div
-                          className={`px-4 py-2 rounded-3xl ${
+                          className={`px-4 py-2 rounded-3xl break-words whitespace-pre-wrap overflow-hidden ${
                             isCurrentUser
                               ? "bg-white/5 text-white"
                               : "bg-white/30 text-white"
@@ -230,7 +245,9 @@ export default function FriendChat() {
                               ))}
                             </div>
                           )}
-                          <p className="text-sm">{chat.content}</p>
+                          <div className="flex items-center gap-1">
+                            <p className={`text-sm ${chat.decryptionFailed ? 'text-red-400 italic' : ''}`}>{chat.content}</p>
+                          </div>
                         </div>
                         
                         {/* Reaction Picker Trigger */}

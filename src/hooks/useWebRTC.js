@@ -20,11 +20,118 @@ export function useWebRTC(roomId) {
   const [localStream, setLocalStream] = useState(null);
   const [peers, setPeers] = useState({}); // Map<userId, { stream, pc }>
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const [speakingUsers, setSpeakingUsers] = useState({}); // Map<userId, boolean>
   const peersRef = useRef({}); // Ref to keep track of peers without re-renders
   const localStreamRef = useRef(null);
   const pendingIceCandidatesRef = useRef({}); // Queue ICE candidates until remote description is set
   const makingOfferRef = useRef({}); // Track if we're currently making an offer for each peer
   const ignoreOfferRef = useRef({}); // Track if we should ignore incoming offers during our negotiation
+  const explicitVideoStateRef = useRef({}); // Track explicitly signaled video states (takes priority)
+  const audioContextRef = useRef(null);
+  const analyserNodesRef = useRef({}); // Map<userId, { analyser, dataArray }>
+  const voiceDetectionIntervalRef = useRef(null);
+  
+  // Voice activity detection threshold (0-255, higher = less sensitive)
+  const VOICE_THRESHOLD = 25; // Adjust this to filter out background noise
+
+  // Set up audio analyser for a stream
+  const setupAudioAnalyser = (userId, stream) => {
+    if (!stream || analyserNodesRef.current[userId]) return;
+    
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      
+      const audioContext = audioContextRef.current;
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyserNodesRef.current[userId] = { analyser, dataArray, source };
+      
+      console.log(`[VAD] Set up audio analyser for ${userId}`);
+    } catch (err) {
+      console.error(`[VAD] Error setting up audio analyser for ${userId}:`, err);
+    }
+  };
+  
+  // Clean up audio analyser for a user
+  const cleanupAudioAnalyser = (userId) => {
+    if (analyserNodesRef.current[userId]) {
+      try {
+        analyserNodesRef.current[userId].source?.disconnect();
+      } catch (e) {}
+      delete analyserNodesRef.current[userId];
+    }
+  };
+  
+  // Broadcast local speaking state to peers
+  const broadcastSpeakingState = (isSpeaking) => {
+    if (!user?.id || !roomId) return;
+    
+    // Send to all peers via signaling
+    Object.keys(peersRef.current).forEach(peerId => {
+      sendSignal({
+        roomId,
+        senderId: user.id,
+        receiverId: peerId,
+        type: "speaking-state",
+        data: { speaking: isSpeaking },
+      }).catch(err => console.error("Error sending speaking state:", err));
+    });
+  };
+  
+  // Track last speaking state to avoid spamming signals
+  const lastSpeakingStateRef = useRef(false);
+  
+  // Voice activity detection loop - only detects LOCAL audio
+  useEffect(() => {
+    if (!roomId || !user?.id) return;
+    
+    // Start detection loop
+    voiceDetectionIntervalRef.current = setInterval(() => {
+      // Only check local user's audio
+      const localAnalyser = analyserNodesRef.current[user.id];
+      if (!localAnalyser?.analyser) return;
+      
+      const { analyser, dataArray } = localAnalyser;
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume (focus on voice frequency range ~300-3000Hz)
+      let sum = 0;
+      const voiceStart = 2;
+      const voiceEnd = Math.min(16, dataArray.length);
+      for (let i = voiceStart; i < voiceEnd; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / (voiceEnd - voiceStart);
+      
+      const isSpeaking = average > VOICE_THRESHOLD;
+      
+      // Broadcast if state changed
+      if (isSpeaking !== lastSpeakingStateRef.current) {
+        lastSpeakingStateRef.current = isSpeaking;
+        broadcastSpeakingState(isSpeaking);
+        
+        // Update local state too (for own display if needed)
+        setSpeakingUsers(prev => ({
+          ...prev,
+          [user.id]: isSpeaking
+        }));
+      }
+    }, 100); // Check every 100ms
+    
+    return () => {
+      if (voiceDetectionIntervalRef.current) {
+        clearInterval(voiceDetectionIntervalRef.current);
+      }
+    };
+  }, [roomId, user?.id]);
 
   // Auto-start audio on mount
   useEffect(() => {
@@ -45,11 +152,27 @@ export function useWebRTC(roomId) {
       
       setLocalStream(stream);
       localStreamRef.current = stream;
+      
+      // Set up audio analyser for local voice activity detection
+      if (user?.id && stream.getAudioTracks().length > 0) {
+        setupAudioAnalyser(user.id, stream);
+      }
 
-      // Add tracks to existing peers and manually trigger negotiation
+      // Add tracks to existing peers using replaceTrack (transceivers already exist)
       for (const [peerId, { pc }] of Object.entries(peersRef.current)) {
         stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
+          // Find existing transceiver for this track kind
+          const transceiver = pc.getTransceivers().find(
+            t => t.sender.track === null && t.receiver.track?.kind === track.kind
+          );
+          if (transceiver) {
+            transceiver.sender.replaceTrack(track);
+            console.log(`Replaced ${track.kind} track for ${peerId}`);
+          } else {
+            // Fallback to addTrack if no matching transceiver
+            pc.addTrack(track, stream);
+            console.log(`Added ${track.kind} track for ${peerId}`);
+          }
         });
         
         // Manually trigger negotiation since onnegotiationneeded may not fire
@@ -199,10 +322,23 @@ export function useWebRTC(roomId) {
 
       const pc = new RTCPeerConnection(ICE_SERVERS);
 
+      // Add transceivers for both audio and video upfront to avoid renegotiation issues
+      // This ensures both directions are ready even if we don't have local tracks yet
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.addTransceiver('video', { direction: 'sendrecv' });
+
       // Add local tracks if they exist
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => {
-          pc.addTrack(track, localStreamRef.current);
+          // Find the transceiver for this track kind and replace the sender's track
+          const transceiver = pc.getTransceivers().find(
+            t => t.sender.track === null && t.receiver.track?.kind === track.kind
+          );
+          if (transceiver) {
+            transceiver.sender.replaceTrack(track);
+          } else {
+            pc.addTrack(track, localStreamRef.current);
+          }
         });
       }
 
@@ -223,89 +359,100 @@ export function useWebRTC(roomId) {
       pc.ontrack = async (event) => {
         console.log(`Received remote track from ${remoteUserId}`, event.track.kind);
         
-        // Fetch user details for the remote user
-        const { data: userDetails, error: userError } = await supabase
-          .from("User")
-          .select("username, email")
-          .eq("id", remoteUserId)
-          .single();
-        
-        if (userError) {
-          console.error(`Error fetching user details for ${remoteUserId}:`, userError);
-        } else {
-          console.log(`User details for ${remoteUserId}:`, userDetails);
+        // Get stream from event, or create one if not available
+        let stream = event.streams[0];
+        if (!stream) {
+          console.log(`No stream in ontrack event, creating new MediaStream for ${remoteUserId}`);
+          stream = new MediaStream([event.track]);
         }
         
-        const stream = event.streams[0];
-        const videoTrack = stream.getVideoTracks()[0];
-        // Initial video state
-        let isVideoEnabled = videoTrack && videoTrack.enabled && !videoTrack.muted && videoTrack.readyState === 'live';
-
-        // Listen for track changes to update UI
-        event.track.onmute = () => {
-          console.log(`Track ${event.track.kind} muted from ${remoteUserId}`);
-          if (event.track.kind === 'video') {
-            setPeers((prev) => ({
-              ...prev,
-              [remoteUserId]: { ...prev[remoteUserId], isVideoEnabled: false }
-            }));
+        // Update peer with stream immediately, preserving existing video state
+        setPeers((prev) => {
+          const existingPeer = prev[remoteUserId];
+          const explicitState = explicitVideoStateRef.current[remoteUserId];
+          
+          // If we already have a stream, add the new track to it
+          let peerStream = existingPeer?.stream || stream;
+          if (existingPeer?.stream && existingPeer.stream !== stream) {
+            // Add the new track to existing stream if it's not already there
+            const existingTrackIds = existingPeer.stream.getTracks().map(t => t.id);
+            if (!existingTrackIds.includes(event.track.id)) {
+              existingPeer.stream.addTrack(event.track);
+            }
+            peerStream = existingPeer.stream;
           }
-        };
-        
-        event.track.onunmute = () => {
-          console.log(`Track ${event.track.kind} unmuted from ${remoteUserId}`);
-          if (event.track.kind === 'video') {
-            setPeers((prev) => ({
-              ...prev,
-              [remoteUserId]: { ...prev[remoteUserId], isVideoEnabled: true }
-            }));
+          
+          // Determine video state priority:
+          // 1. Explicit signaled state (highest priority)
+          // 2. Existing peer state (if peer already exists)
+          // 3. Track detection (only for initial setup)
+          let isVideoEnabled;
+          if (explicitState !== undefined) {
+            isVideoEnabled = explicitState;
+            console.log(`[ontrack] Using explicit video state for ${remoteUserId}:`, isVideoEnabled);
+          } else if (existingPeer?.isVideoEnabled !== undefined) {
+            isVideoEnabled = existingPeer.isVideoEnabled;
+            console.log(`[ontrack] Preserving existing video state for ${remoteUserId}:`, isVideoEnabled);
+          } else {
+            const videoTrack = peerStream.getVideoTracks()[0];
+            isVideoEnabled = videoTrack && videoTrack.enabled && !videoTrack.muted && videoTrack.readyState === 'live';
+            console.log(`[ontrack] Using detected video state for ${remoteUserId}:`, isVideoEnabled);
           }
-        };
+          
+          return {
+            ...prev,
+            [remoteUserId]: { 
+              ...existingPeer,
+              stream: peerStream, 
+              pc,
+              username: existingPeer?.username || `User_${remoteUserId.slice(0, 8)}`,
+              isVideoEnabled
+            },
+          };
+        });
         
-        event.track.onended = () => {
-          console.log(`Track ${event.track.kind} ended from ${remoteUserId}`);
-          if (event.track.kind === 'video') {
-            setPeers((prev) => ({
-              ...prev,
-              [remoteUserId]: { ...prev[remoteUserId], isVideoEnabled: false }
-            }));
+        // Set up audio analyser for voice activity detection
+        if (event.track.kind === 'audio' && stream) {
+          setupAudioAnalyser(remoteUserId, stream);
+        }
+        
+        // Fetch user details asynchronously and update username only
+        try {
+          const { data: userDetails } = await supabase
+            .from("User")
+            .select("username, email")
+            .eq("id", remoteUserId)
+            .single();
+          
+          if (userDetails) {
+            setPeers((prev) => {
+              if (!prev[remoteUserId]) return prev;
+              return {
+                ...prev,
+                [remoteUserId]: { 
+                  ...prev[remoteUserId],
+                  username: userDetails.username || userDetails.email?.split('@')[0] || prev[remoteUserId].username
+                }
+              };
+            });
           }
-        };
-        
-        // Listen for stream track changes
-        stream.onaddtrack = (e) => {
-          console.log(`Track added to stream for ${remoteUserId}`, e.track.kind);
-          if (e.track.kind === 'video') {
-             setPeers((prev) => ({
-              ...prev,
-              [remoteUserId]: { ...prev[remoteUserId], isVideoEnabled: !e.track.muted }
-            }));
-          }
-        };
-        
-        stream.onremovetrack = (e) => {
-          console.log(`Track removed from stream for ${remoteUserId}`, e.track.kind);
-          if (e.track.kind === 'video') {
-             setPeers((prev) => ({
-              ...prev,
-              [remoteUserId]: { ...prev[remoteUserId], isVideoEnabled: false }
-            }));
-          }
-        };
-        
-        setPeers((prev) => ({
-          ...prev,
-          [remoteUserId]: { 
-            stream, 
-            pc,
-            username: userDetails?.username || userDetails?.email?.split('@')[0] || `User_${remoteUserId.slice(0, 8)}`,
-            isVideoEnabled: prev[remoteUserId]?.isVideoEnabled || isVideoEnabled // Keep existing state if available or use new
-          },
-        }));
+        } catch (err) {
+          console.error(`Error fetching user details for ${remoteUserId}:`, err);
+        }
       };
 
       // Handle negotiation needed (for when we add tracks later)
+      // Note: We use a flag to skip the initial onnegotiationneeded that fires from addTransceiver
+      // The manual offer creation in presence handlers will handle the initial negotiation
+      let initialNegotiationSkipped = false;
       pc.onnegotiationneeded = async () => {
+        // Skip the first negotiation triggered by addTransceiver - we handle it manually
+        if (!initialNegotiationSkipped && isInitiator) {
+          initialNegotiationSkipped = true;
+          console.log(`⏭️ Skipping initial onnegotiationneeded for ${remoteUserId} (will be handled manually)`);
+          return;
+        }
+        
         // Prevent overlapping negotiations
         if (makingOfferRef.current[remoteUserId]) {
           console.log(`⚠️ Already making offer for ${remoteUserId}, skipping onnegotiationneeded`);
@@ -322,6 +469,13 @@ export function useWebRTC(roomId) {
           makingOfferRef.current[remoteUserId] = true;
           console.log(`Negotiation needed for ${remoteUserId}`);
           const offer = await pc.createOffer();
+          
+          // Double-check state hasn't changed during async operation
+          if (pc.signalingState !== "stable") {
+            console.log(`⚠️ Signaling state changed to ${pc.signalingState} during offer creation, aborting`);
+            return;
+          }
+          
           await pc.setLocalDescription(offer);
           await sendSignal({
             roomId,
@@ -395,6 +549,9 @@ export function useWebRTC(roomId) {
         console.log("Presence leave:", leftPresences);
         setOnlineUsers((prev) => prev.filter(id => !leftPresences.some(p => p.user_id === id)));
         leftPresences.forEach((presence) => {
+          // Clean up explicit video state
+          delete explicitVideoStateRef.current[presence.user_id];
+          
           if (peersRef.current[presence.user_id]) {
             peersRef.current[presence.user_id].pc.close();
             delete peersRef.current[presence.user_id];
@@ -451,8 +608,14 @@ export function useWebRTC(roomId) {
           }
           
           console.log(`📝 Setting remote description (offer) from ${sender_id}`);
-          await pc.setRemoteDescription(new RTCSessionDescription(data));
-          console.log(`✅ Remote description set, creating answer for ${sender_id}`);
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data));
+            console.log(`✅ Remote description set, creating answer for ${sender_id}`);
+          } catch (err) {
+            console.error(`❌ Error setting remote offer from ${sender_id}:`, err.message);
+            // Skip answering if we can't set remote description
+            return;
+          }
           
           // Process any pending ICE candidates
           if (pendingIceCandidatesRef.current[sender_id]?.length > 0) {
@@ -523,9 +686,23 @@ export function useWebRTC(roomId) {
           }
         } else if (type === "video-state") {
           console.log(`📹 Video state update from ${sender_id}: ${data.enabled}`);
-          setPeers((prev) => ({
+          // Store in ref so ontrack respects this
+          explicitVideoStateRef.current[sender_id] = data.enabled;
+          setPeers((prev) => {
+            if (!prev[sender_id]) {
+              console.log(`⚠️ No peer found for ${sender_id}, storing video-state for later`);
+              return prev;
+            }
+            return {
+              ...prev,
+              [sender_id]: { ...prev[sender_id], isVideoEnabled: data.enabled }
+            };
+          });
+        } else if (type === "speaking-state") {
+          // Update speaking state from remote peer
+          setSpeakingUsers((prev) => ({
             ...prev,
-            [sender_id]: { ...prev[sender_id], isVideoEnabled: data.enabled }
+            [sender_id]: data.speaking
           }));
         }
       } catch (err) {
@@ -543,9 +720,22 @@ export function useWebRTC(roomId) {
 
       Object.values(peersRef.current).forEach(({ pc }) => pc.close());
       peersRef.current = {};
+      explicitVideoStateRef.current = {};
       setPeers({});
+      
+      // Clean up voice activity detection resources
+      if (voiceDetectionIntervalRef.current) {
+        clearInterval(voiceDetectionIntervalRef.current);
+        voiceDetectionIntervalRef.current = null;
+      }
+      Object.keys(analyserNodesRef.current).forEach(cleanupAudioAnalyser);
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+      setSpeakingUsers({});
     };
   }, [roomId, user]); // Removed localStream dependency
 
-  return { localStream, peers, toggleAudio, toggleVideo, onlineUsers };
+  return { localStream, peers, toggleAudio, toggleVideo, onlineUsers, speakingUsers };
 }
