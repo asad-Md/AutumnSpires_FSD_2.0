@@ -25,6 +25,8 @@ export default function FriendChat() {
   const [message, setMessage] = useState("");
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedMessageId, setSelectedMessageId] = useState(null); // Track which message shows timestamp
+  const [replyTo, setReplyTo] = useState(null); // Track message being replied to
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null); // Track message to highlight
 
   // Use the hook for real data
   const {
@@ -176,6 +178,39 @@ export default function FriendChat() {
     setSelectedMessageId(selectedMessageId === messageId ? null : messageId);
   };
 
+  // Handle double-click to reply to a message
+  const handleMessageDoubleClick = (chat) => {
+    setReplyTo({
+      id: chat.id,
+      content: chat.content,
+      sender_id: chat.sender_id,
+      senderName: chat.sender_id === user?.id ? "You" : selectedChat?.username,
+    });
+  };
+
+  // Cancel reply
+  const cancelReply = () => {
+    setReplyTo(null);
+  };
+
+  // Scroll to and highlight a message (when clicking reply reference)
+  const scrollToAndHighlight = (messageId) => {
+    const replyEl = document.getElementById(`msg-${messageId}`);
+    if (replyEl) {
+      replyEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMessageId(messageId);
+      // Remove highlight after animation
+      setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 1500);
+    }
+  };
+
+  // Find a message by ID (for displaying reply reference)
+  const findMessageById = (id) => {
+    return messages.find((m) => m.id === id || m.id === String(id));
+  };
+
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const fileInputRef = useRef(null);
@@ -203,9 +238,11 @@ export default function FriendChat() {
     // Store values and clear input immediately for faster typing
     const messageToSend = message.trim();
     const fileToSend = selectedFile;
+    const replyToSend = replyTo;
     setMessage("");
     setSelectedFile(null);
     setPreviewUrl(null);
+    setReplyTo(null);
 
     let attachments = [];
     if (fileToSend) {
@@ -220,7 +257,7 @@ export default function FriendChat() {
       }
     }
 
-    await sendMessage(messageToSend, attachments);
+    await sendMessage(messageToSend, attachments, replyToSend);
   };
 
   return (
@@ -347,7 +384,8 @@ export default function FriendChat() {
                       initial={{ opacity: 0, y: 10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.15 }}
-                      className={`flex gap-2 ${
+                      onDoubleClick={() => handleMessageDoubleClick(chat)}
+                      className={`flex gap-2 w-full cursor-pointer ${
                         isLastInGroup ? "mb-2" : "mb-0.5"
                       } ${isCurrentUser ? "flex-row-reverse" : "flex-row"}`}
                     >
@@ -357,9 +395,33 @@ export default function FriendChat() {
                         } max-w-[70%]`}
                       >
                         <div className="relative group w-full">
+                          {/* Reply reference - show what message this is replying to */}
+                          {chat.reply_to && (
+                            <div
+                              className={`mb-1 cursor-pointer ${
+                                isCurrentUser ? "ml-auto" : "mr-auto"
+                              }`}
+                              onClick={() =>
+                                scrollToAndHighlight(chat.reply_to.id)
+                              }
+                            >
+                              <div className="flex items-center gap-1.5 px-3 py-1 text-[11px] text-gray-400">
+                                <div className="w-0.5 h-4 bg-white/40 rounded-full"></div>
+                                <div className="min-w-0">
+                                  <span className="font-medium text-white/70">
+                                    {chat.reply_to.senderName}
+                                  </span>
+                                  <p className="truncate max-w-[180px] text-gray-500">
+                                    {chat.reply_to.content}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <div
+                            id={`msg-${chat.id}`}
                             onClick={() => handleMessageClick(chat.id)}
-                            className={`px-4 py-2 ${getBorderRadius()} break-words whitespace-pre-wrap overflow-hidden cursor-pointer select-none ${
+                            className={`relative px-4 py-2 ${getBorderRadius()} break-words whitespace-pre-wrap overflow-hidden cursor-pointer select-none transition-all duration-300 ${
                               isCurrentUser
                                 ? "bg-white/5 text-white"
                                 : "bg-white/30 text-white"
@@ -367,6 +429,10 @@ export default function FriendChat() {
                               isFailed ? "message-failed" : ""
                             }`}
                           >
+                            {/* Highlight overlay */}
+                            {highlightedMessageId === chat.id && (
+                              <div className="absolute inset-0 bg-white/40 rounded-[inherit] pointer-events-none animate-pulse" />
+                            )}
                             {chat.attachments &&
                               chat.attachments.length > 0 && (
                                 <div className="mb-2">
@@ -561,6 +627,31 @@ export default function FriendChat() {
             </>
           )}
         </div>
+
+        {/* Reply preview */}
+        {replyTo && (
+          <div className="mx-3 mt-2 px-3 py-2 bg-white/5 rounded-2xl border border-white/10">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2 min-w-0">
+                <div className="w-0.5 h-8 bg-white/40 rounded-full shrink-0 mt-0.5"></div>
+                <div className="min-w-0">
+                  <span className="text-xs font-medium text-white/70">
+                    {replyTo.senderName}
+                  </span>
+                  <p className="text-sm text-gray-400 truncate max-w-[250px]">
+                    {replyTo.content}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={cancelReply}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors shrink-0"
+              >
+                <X className="w-4 h-4 text-gray-400" />
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="p-3 border-white/10">
           <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 border border-white/10">

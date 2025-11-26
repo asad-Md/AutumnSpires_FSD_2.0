@@ -654,7 +654,7 @@ export function useFriendChat(friendId) {
     };
   }, [friendId, user]);
 
-  const sendMessage = async (content, attachments = []) => {
+  const sendMessage = async (content, attachments = [], replyTo = null) => {
     if ((!content.trim() && attachments.length === 0) || !user || !friendId)
       return;
 
@@ -671,6 +671,7 @@ export function useFriendChat(friendId) {
       receiver_id: friendId,
       content: content.trim(), // Show unencrypted content locally
       attachments,
+      reply_to: replyTo, // Include reply reference
       created_at: now,
       is_read: false,
       pending: true, // Mark as pending for UI feedback
@@ -710,6 +711,7 @@ export function useFriendChat(friendId) {
             receiver_id: friendId,
             content: messageContent,
             attachments,
+            reply_to: replyTo, // Store reply reference in DB
           },
         ])
         .select()
