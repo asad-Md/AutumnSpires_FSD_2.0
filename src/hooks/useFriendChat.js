@@ -167,37 +167,6 @@ export function useFriendChat(friendId) {
     };
   }, [friendId, user]);
 
-  const sendMessage = async (content) => {
-    if (!content.trim() || !user || !friendId) return;
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sender_id: user.id,
-          receiver_id: friendId,
-          content: content.trim(),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error);
-      }
-
-      // We don't need to manually add to state if subscription works,
-      // but for instant feedback we could.
-      // However, subscription is fast enough usually.
-      // Let's rely on subscription to keep it simple and consistent.
-    } catch (error) {
-      console.error("Error sending message:", error);
-    }
-  };
-
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef(null);
 
@@ -227,6 +196,48 @@ export function useFriendChat(friendId) {
     };
   }, [friendId, user]);
 
+  const sendMessage = async (content, attachments = []) => {
+    if ((!content.trim() && attachments.length === 0) || !user || !friendId) return;
+
+    try {
+      const { error } = await supabase.from("Chat").insert([
+        {
+          sender_id: user.id,
+          receiver_id: friendId,
+          content: content.trim(),
+          attachments,
+        },
+      ]);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error sending message:", error);
+    }
+  };
+
+  const uploadFile = async (file) => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('chat-attachments')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('chat-attachments')
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      return null;
+    }
+  };
+
   const sendTyping = async () => {
     if (!user || !friendId) return;
     const channelId = `typing:${[user.id, friendId].sort().join("-")}`;
@@ -252,5 +263,5 @@ export function useFriendChat(friendId) {
     }
   };
 
-  return { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction };
+  return { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction, uploadFile };
 }

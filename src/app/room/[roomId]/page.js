@@ -5,10 +5,11 @@ import { useSnackbar } from "@/store/snackbarStore";
 import { useUserStore } from "@/store/userStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useRoomMessages } from "@/hooks/useRoomMessages";
-import { X, Share2, Copy, Mic, MicOff, Video as VideoIcon, VideoOff, Send, MessageSquare, ChevronLeft, Grid, Smile } from "lucide-react";
+import { X, Share2, Copy, Mic, MicOff, Video as VideoIcon, VideoOff, Send, MessageSquare, ChevronLeft, Grid, Smile, Paperclip, FileText, Download } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useParams, useRouter } from "next/navigation";
 import useRoomStore from "@/store/roomStore";
+import ImageModal from "@/components/common/ImageModal";
 
 const VideoPlayer = ({ stream, muted = false, label }) => {
   const videoRef = useRef(null);
@@ -53,30 +54,6 @@ export default function RoomPage() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
   const { user } = useUserStore();
-  const { rooms } = useRoomStore();
-  
-  // Find room details from store
-  const room = rooms.find(r => r.id === roomId);
-  
-  // WebRTC Hook
-  const { localStream, peers, toggleAudio, toggleVideo, onlineUsers } = useWebRTC(roomId);
-  
-  // Chat Hook
-  const { messages, isLoading: messagesLoading, sendMessage, messagesEndRef, typingUsers, sendTyping, addReaction } = useRoomMessages(roomId);
-  
-  const [newMessage, setNewMessage] = useState("");
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOff, setIsVideoOff] = useState(true);
-  
-  // UI State
-  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-  const [isVideoGridOpen, setIsVideoGridOpen] = useState(false);
-  const [gridSize, setGridSize] = useState({ width: 600, height: 400 });
-
-  // Check if anyone is streaming video
-  const activeVideoStreams = Object.values(peers).filter(p => p.isVideoEnabled).length;
-  const hasActiveVideo = activeVideoStreams > 0 || !isVideoOff;
-
   if (!room) {
     return (
       <div className="flex items-center justify-center h-screen text-white">
@@ -104,11 +81,47 @@ export default function RoomPage() {
     router.push("/home");
   };
 
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        showSnackbar("File size too large. Please select a file under 5MB.", "error");
+        return;
+      }
+      setSelectedFile(file);
+      if (file.type.startsWith('image/')) {
+        setPreviewUrl(URL.createObjectURL(file));
+      } else {
+        setPreviewUrl(null);
+      }
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
-    await sendMessage(newMessage);
+    if (!newMessage.trim() && !selectedFile) return;
+
+    let attachments = [];
+    if (selectedFile) {
+      const fileUrl = await uploadFile(selectedFile);
+      if (fileUrl) {
+        attachments.push({ 
+          type: selectedFile.type.startsWith('image/') ? 'image' : 'file', 
+          url: fileUrl,
+          name: selectedFile.name,
+          size: selectedFile.size
+        });
+      }
+    }
+
+    await sendMessage(newMessage, attachments);
     setNewMessage("");
+    setSelectedFile(null);
+    setPreviewUrl(null);
   };
 
   const handleToggleAudio = async () => {
@@ -300,6 +313,60 @@ export default function RoomPage() {
                           ? 'bg-blue-500/40 text-white rounded-tr-sm' 
                           : 'bg-white/10 text-gray-200 rounded-tl-sm'
                       }`}>
+                        {msg.attachments && msg.attachments.length > 0 && (
+                          <div className="mb-2">
+                            {msg.attachments.map((att, index) => (
+                              att.type === 'image' ? (
+                                <div key={index} className="relative group/image inline-block">
+                                  <img 
+                                    src={att.url} 
+                                    alt="Attachment" 
+                                    className="max-w-[200px] rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                    onClick={() => setSelectedImage(att.url)}
+                                  />
+                                  <a 
+                                    href={att.url} 
+                                    download 
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover/image:opacity-100 transition-opacity"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="Download"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </a>
+                                </div>
+                              ) : (
+                                <div key={index} className="relative group/file">
+                                  <a 
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 bg-black/20 hover:bg-black/30 p-3 rounded-lg border border-white/10 transition-colors"
+                                  >
+                                    <div className="p-2 bg-white/10 rounded-lg">
+                                      <FileText className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-medium text-white truncate">{att.name || "File"}</p>
+                                      <p className="text-xs text-gray-400">{(att.size / 1024).toFixed(1)} KB</p>
+                                    </div>
+                                  </a>
+                                  <a 
+                                    href={att.url}
+                                    download
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="absolute top-1/2 -translate-y-1/2 right-2 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover/file:opacity-100 transition-opacity"
+                                    title="Download"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </a>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        )}
                         {msg.content}
                       </div>
 
@@ -374,18 +441,74 @@ export default function RoomPage() {
             <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 bg-black/20">
               <div className="flex gap-2">
                 <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-gray-400 hover:text-white"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+
+                {(previewUrl || selectedFile) && (
+                  <div className="relative group">
+                    {previewUrl ? (
+                      <img src={previewUrl} alt="Preview" className="h-10 w-10 rounded-lg object-cover border border-white/20" />
+                    ) : (
+                      <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center border border-white/20">
+                        <FileText className="w-5 h-5 text-white" />
+                      </div>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setSelectedFile(null);
+                        setPreviewUrl(null);
+                      }}
+                      className="absolute -top-1 -right-1 bg-red-500 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-2 h-2 text-white" />
+                    </button>
+                  </div>
+                )}
+
+                <input
                   type="text"
                   value={newMessage}
                   onChange={(e) => {
                     setNewMessage(e.target.value);
                     sendTyping();
                   }}
+                  onPaste={(e) => {
+                    const items = e.clipboardData.items;
+                    for (let i = 0; i < items.length; i++) {
+                      if (items[i].kind === 'file') {
+                        const file = items[i].getAsFile();
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            showSnackbar("File size too large. Please paste a file under 5MB.", "error");
+                            return;
+                          }
+                          setSelectedFile(file);
+                          if (file.type.startsWith('image/')) {
+                            setPreviewUrl(URL.createObjectURL(file));
+                          } else {
+                            setPreviewUrl(null);
+                          }
+                        }
+                      }
+                    }
+                  }}
                   placeholder="Message..."
                   className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/20"
                 />
                 <button 
                   type="submit"
-                  disabled={!newMessage.trim()}
+                  disabled={!newMessage.trim() && !selectedFile}
                   className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors"
                 >
                   <Send className="w-4 h-4 text-white" />

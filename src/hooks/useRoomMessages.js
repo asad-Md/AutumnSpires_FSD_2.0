@@ -71,19 +71,43 @@ export function useRoomMessages(roomId) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = async (content) => {
-    if (!content.trim() || !user || !roomId) return;
+  const sendMessage = async (content, attachments = []) => {
+    if ((!content.trim() && attachments.length === 0) || !user || !roomId) return;
 
     try {
       const { error } = await supabase.from("Message").insert({
         room_id: roomId,
         user_id: user.id,
         content: content.trim(),
+        attachments,
       });
 
       if (error) throw error;
     } catch (error) {
       console.error("Error sending message:", error);
+    }
+  };
+
+  const uploadFile = async (file) => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random()}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('chat-attachments')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('chat-attachments')
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      return null;
     }
   };
 
@@ -165,5 +189,5 @@ export function useRoomMessages(roomId) {
     }
   };
 
-  return { messages, isLoading, sendMessage, messagesEndRef, typingUsers, sendTyping, addReaction };
+  return { messages, isLoading, sendMessage, messagesEndRef, typingUsers, sendTyping, addReaction, uploadFile };
 }
