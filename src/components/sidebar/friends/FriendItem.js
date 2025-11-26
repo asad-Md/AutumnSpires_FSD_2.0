@@ -2,7 +2,7 @@
 
 import { useChatStore } from "@/store/chatStore";
 
-export default function FriendItem({ friend, latestMessage }) {
+export default function FriendItem({ friend, latestMessage, isOnline }) {
   const { setSelectedChat, selectedChat } = useChatStore();
   const isSelected = selectedChat?.id === friend.id;
 
@@ -31,9 +31,14 @@ export default function FriendItem({ friend, latestMessage }) {
         </div>
         <div className="flex-1 min-w-0 flex flex-col justify-center">
           <div className="flex items-center justify-between mb-1 pr-1">
-            <span className="text-white text-sm font-medium truncate">
-              {friend.username}
-            </span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-white text-sm font-medium truncate">
+                {friend.username}
+              </span>
+              {isOnline && (
+                <div className="w-2 h-2 bg-green-500 rounded-full shrink-0" title="Online"></div>
+              )}
+            </div>
             {latestMessage && (
               <span className="text-gray-500 text-[10px]">
                 {formatTime(latestMessage.created_at)}

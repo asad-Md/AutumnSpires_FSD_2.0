@@ -13,6 +13,7 @@ export const useUserStore = create(
 
       friends: [],
       friendRequests: [],
+      onlineUsers: [],
 
       setUser: (userData) =>
         set({
@@ -44,6 +45,14 @@ export const useUserStore = create(
         })),
 
       setFriends: (friends) => set({ friends }),
+
+      setOnlineUsers: (updater) =>
+        set((state) => ({
+          onlineUsers:
+            typeof updater === "function"
+              ? updater(state.onlineUsers)
+              : updater,
+        })),
 
       fetchFriendRequests: async (userId) => {
         if (!userId) return;

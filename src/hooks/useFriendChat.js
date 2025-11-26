@@ -198,5 +198,44 @@ export function useFriendChat(friendId) {
     }
   };
 
-  return { messages, isLoading, sendMessage, messagesEndRef };
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (!friendId || !user) return;
+
+    const channelId = `typing:${[user.id, friendId].sort().join("-")}`;
+    const channel = supabase.channel(channelId);
+
+    channel
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload.userId !== user.id) {
+          setIsTyping(true);
+          // Clear existing timeout
+          if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+          // Set new timeout to clear typing status
+          typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping(false);
+          }, 3000);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [friendId, user]);
+
+  const sendTyping = async () => {
+    if (!user || !friendId) return;
+    const channelId = `typing:${[user.id, friendId].sort().join("-")}`;
+    await supabase.channel(channelId).send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId: user.id },
+    });
+  };
+
+  return { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping };
 }

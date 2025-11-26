@@ -62,7 +62,7 @@ export default function RoomPage() {
   const { localStream, peers, toggleAudio, toggleVideo, onlineUsers } = useWebRTC(roomId);
   
   // Chat Hook
-  const { messages, isLoading: messagesLoading, sendMessage, messagesEndRef } = useRoomMessages(roomId);
+  const { messages, isLoading: messagesLoading, sendMessage, messagesEndRef, typingUsers, sendTyping } = useRoomMessages(roomId);
   
   const [newMessage, setNewMessage] = useState("");
   const [isMuted, setIsMuted] = useState(false);
@@ -305,6 +305,22 @@ export default function RoomPage() {
                 ))
               )}
               <div ref={messagesEndRef} />
+              {typingUsers.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 ml-2 mb-2"
+                >
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {typingUsers.map((u) => u.username).join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+                  </span>
+                </motion.div>
+              )}
             </div>
 
             <form onSubmit={handleSendMessage} className="p-3 border-t border-white/10 bg-black/20">
@@ -312,7 +328,10 @@ export default function RoomPage() {
                 <input
                   type="text"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    sendTyping();
+                  }}
                   placeholder="Message..."
                   className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-white/20"
                 />

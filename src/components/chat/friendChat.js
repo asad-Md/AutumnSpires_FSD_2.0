@@ -9,11 +9,11 @@ import { motion } from "motion/react";
 
 export default function FriendChat() {
   const { selectedChat, clearSelection } = useChatStore();
-  const { user, removeFriend } = useUserStore();
+  const { user, removeFriend, onlineUsers } = useUserStore();
   const [message, setMessage] = useState("");
   
   // Use the hook for real data
-  const { messages, isLoading, sendMessage, messagesEndRef } = useFriendChat(selectedChat?.id);
+  const { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping } = useFriendChat(selectedChat?.id);
 
   const handleUnfriend = async () => {
     if (
@@ -76,7 +76,9 @@ export default function FriendChat() {
               <h2 className="text-white font-medium">
                 {selectedChat.username}
               </h2>
-              <p className="text-green-400 text-xs">Online</p>
+              <p className={`text-xs ${onlineUsers.includes(selectedChat.id) ? 'text-green-400' : 'text-gray-400'}`}>
+                {onlineUsers.includes(selectedChat.id) ? 'Online' : 'Offline'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -146,6 +148,20 @@ export default function FriendChat() {
                 );
               })}
               <div ref={messagesEndRef} />
+              {isTyping && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex items-center gap-2 ml-4 mb-2"
+                >
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+                  </div>
+                  <span className="text-xs text-gray-400">Typing...</span>
+                </motion.div>
+              )}
             </>
           )}
         </div>
@@ -155,7 +171,10 @@ export default function FriendChat() {
             <input
               type="text"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                sendTyping();
+              }}
               onKeyPress={(e) => e.key === "Enter" && handleSend()}
               placeholder="Type a message..."
               className="flex-1 bg-transparent text-white placeholder-gray-400 outline-none text-sm"

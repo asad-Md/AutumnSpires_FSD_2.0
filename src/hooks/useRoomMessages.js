@@ -87,5 +87,52 @@ export function useRoomMessages(roomId) {
     }
   };
 
-  return { messages, isLoading, sendMessage, messagesEndRef };
+  const [typingUsers, setTypingUsers] = useState([]);
+  const typingTimeoutsRef = useRef({});
+
+  useEffect(() => {
+    if (!roomId || !user) return;
+
+    const channel = supabase.channel(`room:${roomId}:typing`);
+
+    channel
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload.userId !== user.id) {
+          setTypingUsers((prev) => {
+            if (!prev.find((u) => u.id === payload.userId)) {
+              return [...prev, { id: payload.userId, username: payload.username }];
+            }
+            return prev;
+          });
+
+          // Clear existing timeout for this user
+          if (typingTimeoutsRef.current[payload.userId]) {
+            clearTimeout(typingTimeoutsRef.current[payload.userId]);
+          }
+
+          // Set new timeout to remove user from typing list
+          typingTimeoutsRef.current[payload.userId] = setTimeout(() => {
+            setTypingUsers((prev) => prev.filter((u) => u.id !== payload.userId));
+            delete typingTimeoutsRef.current[payload.userId];
+          }, 3000);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      Object.values(typingTimeoutsRef.current).forEach(clearTimeout);
+    };
+  }, [roomId, user]);
+
+  const sendTyping = async () => {
+    if (!user || !roomId) return;
+    await supabase.channel(`room:${roomId}:typing`).send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId: user.id, username: user.username },
+    });
+  };
+
+  return { messages, isLoading, sendMessage, messagesEndRef, typingUsers, sendTyping };
 }

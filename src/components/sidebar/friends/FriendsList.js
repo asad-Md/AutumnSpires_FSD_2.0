@@ -5,6 +5,7 @@ import { useChatStore } from "@/store/chatStore";
 
 export default function FriendsList({ searchText = "" }) {
   const friends = useUserStore((state) => state.friends);
+  const onlineUsers = useUserStore((state) => state.onlineUsers);
   const getLatestMessageForFriend = useChatStore(
     (state) => state.getLatestMessageForFriend
   );
@@ -31,11 +32,13 @@ export default function FriendsList({ searchText = "" }) {
                 latestMessage = storeMessage;
             }
         }
+        const isOnline = onlineUsers.includes(friend.id);
         return (
           <FriendItem
             key={friend.id}
             friend={friend}
             latestMessage={latestMessage}
+            isOnline={isOnline}
           />
         );
       })}

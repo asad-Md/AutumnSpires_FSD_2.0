@@ -1,6 +1,7 @@
 import localFont from "next/font/local";
 import walls from "@/public/walls.png";
 import Snackbar from "@/components/common/Snackbar";
+import PresenceListener from "@/components/common/PresenceListener";
 import AuthListener from "@/components/auth/AuthListener";
 import SmoothScroll from "@/components/common/SmoothScroll";
 import ThemeToggle from "@/components/common/ThemeToggle";
@@ -42,6 +43,7 @@ export default function RootLayout({ children }) {
           </div>
           <Snackbar />
           <AuthListener />
+          <PresenceListener />
           <SmoothScroll />
           <ThemeToggle />
         </ThemeProvider>
