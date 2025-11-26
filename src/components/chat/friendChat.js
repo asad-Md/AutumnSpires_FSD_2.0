@@ -3,7 +3,18 @@
 import { useChatStore } from "@/store/chatStore";
 import { useUserStore } from "@/store/userStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
-import { X, Send, UserMinus, Smile, Paperclip, Image as ImageIcon, FileText, Download, Lock, LockOpen } from "lucide-react";
+import {
+  X,
+  Send,
+  UserMinus,
+  Smile,
+  Paperclip,
+  Image as ImageIcon,
+  FileText,
+  Download,
+  Lock,
+  LockOpen,
+} from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
 import ImageModal from "@/components/common/ImageModal";
@@ -13,15 +24,31 @@ export default function FriendChat() {
   const { user, removeFriend, onlineUsers } = useUserStore();
   const [message, setMessage] = useState("");
   const [selectedImage, setSelectedImage] = useState(null);
-  
+  const [selectedMessageId, setSelectedMessageId] = useState(null); // Track which message shows timestamp
+
   // Use the hook for real data
-  const { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction, uploadFile, e2eeEnabled } = useFriendChat(selectedChat?.id);
+  const {
+    messages,
+    isLoading,
+    sendMessage,
+    messagesEndRef,
+    isTyping,
+    sendTyping,
+    addReaction,
+    uploadFile,
+    e2eeEnabled,
+  } = useFriendChat(selectedChat?.id);
 
   // Debug: log messages when they change
   useEffect(() => {
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1];
-      console.log("[FriendChat] Last message in state:", lastMsg.id, "content:", lastMsg.content?.substring(0, 50));
+      console.log(
+        "[FriendChat] Last message in state:",
+        lastMsg.id,
+        "content:",
+        lastMsg.content?.substring(0, 50)
+      );
     }
   }, [messages]);
 
@@ -59,12 +86,94 @@ export default function FriendChat() {
   };
 
   const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], {
+    // Ensure timestamp is treated as UTC if no timezone specified
+    let date = new Date(timestamp);
+
+    // If timestamp doesn't end with Z or timezone offset, treat as UTC
+    if (
+      typeof timestamp === "string" &&
+      !timestamp.endsWith("Z") &&
+      !timestamp.match(/[+-]\d{2}:\d{2}$/)
+    ) {
+      date = new Date(timestamp + "Z");
+    }
+
+    return date.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       hour12: true,
     });
+  };
+
+  // Check if message is on a different day than previous
+  const isNewDay = (currentMsg, prevMsg) => {
+    if (!prevMsg) return true;
+
+    let currentDate = new Date(currentMsg.created_at);
+    let prevDate = new Date(prevMsg.created_at);
+
+    // Handle UTC parsing
+    if (
+      typeof currentMsg.created_at === "string" &&
+      !currentMsg.created_at.endsWith("Z")
+    ) {
+      currentDate = new Date(currentMsg.created_at + "Z");
+    }
+    if (
+      typeof prevMsg.created_at === "string" &&
+      !prevMsg.created_at.endsWith("Z")
+    ) {
+      prevDate = new Date(prevMsg.created_at + "Z");
+    }
+
+    return currentDate.toDateString() !== prevDate.toDateString();
+  };
+
+  // Check if two messages are more than 5 minutes apart (same day only)
+  const isNewTimeGroup = (currentMsg, prevMsg) => {
+    if (!prevMsg) return true;
+    if (isNewDay(currentMsg, prevMsg)) return true; // New day = new group
+
+    const currentTime = new Date(currentMsg.created_at);
+    const prevTime = new Date(prevMsg.created_at);
+    const diffMinutes = (currentTime - prevTime) / (1000 * 60);
+    return diffMinutes >= 5;
+  };
+
+  // Format date for day separators (only shows day/date, not time)
+  const formatDaySeparator = (timestamp) => {
+    let date = new Date(timestamp);
+    if (
+      typeof timestamp === "string" &&
+      !timestamp.endsWith("Z") &&
+      !timestamp.match(/[+-]\d{2}:\d{2}$/)
+    ) {
+      date = new Date(timestamp + "Z");
+    }
+
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const isToday = date.toDateString() === today.toDateString();
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    if (isToday) {
+      return "Today";
+    } else if (isYesterday) {
+      return "Yesterday";
+    } else {
+      return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+      });
+    }
+  };
+
+  // Handle message click to toggle timestamp
+  const handleMessageClick = (messageId) => {
+    setSelectedMessageId(selectedMessageId === messageId ? null : messageId);
   };
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -74,12 +183,13 @@ export default function FriendChat() {
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      if (file.size > 5 * 1024 * 1024) {
+        // 5MB limit
         alert("File size too large. Please select a file under 5MB.");
         return;
       }
       setSelectedFile(file);
-      if (file.type.startsWith('image/')) {
+      if (file.type.startsWith("image/")) {
         setPreviewUrl(URL.createObjectURL(file));
       } else {
         setPreviewUrl(null);
@@ -90,23 +200,27 @@ export default function FriendChat() {
   const handleSend = async () => {
     if (!message.trim() && !selectedFile) return;
 
+    // Store values and clear input immediately for faster typing
+    const messageToSend = message.trim();
+    const fileToSend = selectedFile;
+    setMessage("");
+    setSelectedFile(null);
+    setPreviewUrl(null);
+
     let attachments = [];
-    if (selectedFile) {
-      const fileUrl = await uploadFile(selectedFile);
+    if (fileToSend) {
+      const fileUrl = await uploadFile(fileToSend);
       if (fileUrl) {
-        attachments.push({ 
-          type: selectedFile.type.startsWith('image/') ? 'image' : 'file', 
+        attachments.push({
+          type: fileToSend.type.startsWith("image/") ? "image" : "file",
           url: fileUrl,
-          name: selectedFile.name,
-          size: selectedFile.size
+          name: fileToSend.name,
+          size: fileToSend.size,
         });
       }
     }
 
-    await sendMessage(message.trim(), attachments);
-    setMessage("");
-    setSelectedFile(null);
-    setPreviewUrl(null);
+    await sendMessage(messageToSend, attachments);
   };
 
   return (
@@ -123,13 +237,22 @@ export default function FriendChat() {
                   {selectedChat.username}
                 </h2>
                 {e2eeEnabled && (
-                  <div className="flex items-center gap-1 text-green-400" title="End-to-end encrypted">
+                  <div
+                    className="flex items-center gap-1 text-green-400"
+                    title="End-to-end encrypted"
+                  >
                     <Lock className="w-3 h-3" />
                   </div>
                 )}
               </div>
-              <p className={`text-xs ${onlineUsers.includes(selectedChat.id) ? 'text-green-400' : 'text-gray-400'}`}>
-                {onlineUsers.includes(selectedChat.id) ? 'Online' : 'Offline'}
+              <p
+                className={`text-xs ${
+                  onlineUsers.includes(selectedChat.id)
+                    ? "text-green-400"
+                    : "text-gray-400"
+                }`}
+              >
+                {onlineUsers.includes(selectedChat.id) ? "Online" : "Offline"}
               </p>
             </div>
           </div>
@@ -152,155 +275,272 @@ export default function FriendChat() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 custom-scrollbar">
+        <div
+          className="flex-1 overflow-y-auto p-4 min-h-0 custom-scrollbar"
+          data-lenis-prevent
+        >
           {isLoading ? (
-             <div className="flex items-center justify-center h-full">
-               <div className="text-gray-400">Loading...</div>
-             </div>
+            <div className="flex items-center justify-center h-full">
+              <div className="text-gray-400">Loading...</div>
+            </div>
           ) : messages.length === 0 ? (
             <div className="text-center text-gray-400 py-8">
               <p>Start chatting with {selectedChat.username}</p>
             </div>
           ) : (
             <>
-              {messages.map((chat) => {
+              {messages.map((chat, index) => {
                 const isCurrentUser = chat.sender_id === user?.id;
-                return (
-                  <motion.div
-                    key={chat.id}
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.2 }}
-                    className={`flex gap-2 ${
-                      isCurrentUser ? "flex-row-reverse" : "flex-row"
-                    }`}
-                  >
-                    {/* <div className='w-8 h-8 rounded-full bg-linear-to-br from-white/20 to-white/5 flex items-center justify-center shrink-0'>
-                      {getAvatarDisplay(chat.sender)}
-                    </div> */}
-                    <div
-                      className={`flex flex-col ${
-                        isCurrentUser ? "items-end" : "items-start"
-                      } max-w-[70%]`}
-                    >
-                      <div className="relative group w-full">
-                        <div
-                          className={`px-4 py-2 rounded-3xl break-words whitespace-pre-wrap overflow-hidden ${
-                            isCurrentUser
-                              ? "bg-white/5 text-white"
-                              : "bg-white/30 text-white"
-                          }`}
-                        >
-                          {chat.attachments && chat.attachments.length > 0 && (
-                            <div className="mb-2">
-                              {chat.attachments.map((att, index) => (
-                                att.type === 'image' ? (
-                                  <div key={index} className="relative group/image inline-block">
-                                    <img 
-                                      src={att.url} 
-                                      alt="Attachment" 
-                                      className="max-w-[200px] rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
-                                      onClick={() => setSelectedImage(att.url)}
-                                    />
-                                    <a 
-                                      href={att.url} 
-                                      download 
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover/image:opacity-100 transition-opacity"
-                                      onClick={(e) => e.stopPropagation()}
-                                      title="Download"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                    </a>
-                                  </div>
-                                ) : (
-                                  <div key={index} className="relative group/file">
-                                    <a 
-                                      href={att.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="flex items-center gap-3 bg-black/20 hover:bg-black/30 p-3 rounded-lg border border-white/10 transition-colors"
-                                    >
-                                      <div className="p-2 bg-white/10 rounded-lg">
-                                        <FileText className="w-5 h-5 text-white" />
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-white truncate">{att.name || "File"}</p>
-                                        <p className="text-xs text-gray-400">{(att.size / 1024).toFixed(1)} KB</p>
-                                      </div>
-                                    </a>
-                                    <a 
-                                      href={att.url}
-                                      download
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="absolute top-1/2 -translate-y-1/2 right-2 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover/file:opacity-100 transition-opacity"
-                                      title="Download"
-                                    >
-                                      <Download className="w-4 h-4" />
-                                    </a>
-                                  </div>
-                                )
-                              ))}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-1">
-                            <p className={`text-sm ${chat.decryptionFailed ? 'text-red-400 italic' : ''}`}>{chat.content}</p>
-                          </div>
-                        </div>
-                        
-                        {/* Reaction Picker Trigger */}
-                        <div className={`absolute top-1/2 -translate-y-1/2 ${isCurrentUser ? '-left-8' : '-right-8'} opacity-0 group-hover:opacity-100 transition-opacity`}>
-                          <div className="relative group/picker">
-                            <button className="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
-                              <Smile className="w-4 h-4" />
-                            </button>
-                          <div className={`absolute bottom-full ${isCurrentUser ? 'right-0' : 'left-0'} pb-2 hidden group-hover/picker:block z-10`}>
-                            <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex gap-1">
-                              {["👍", "❤️", "😂", "😮", "😢", "🔥"].map(emoji => (
-                                <button
-                                  key={emoji}
-                                  onClick={() => addReaction(chat.id, emoji)}
-                                  className="p-1.5 hover:bg-white/20 rounded-full text-lg transition-colors hover:scale-110"
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          </div>
-                        </div>
+                const isPending = chat.pending;
+                const isFailed = chat.failed;
+                const prevMessage = index > 0 ? messages[index - 1] : null;
+                // Don't show time separator for pending messages
+                const showTimeSeparator =
+                  !isPending && isNewTimeGroup(chat, prevMessage);
+                const showDaySeparator =
+                  !isPending && isNewDay(chat, prevMessage);
+                const isTimestampVisible = selectedMessageId === chat.id;
 
-                        {/* Reactions Display */}
-                        {chat.reactions && Object.keys(chat.reactions).length > 0 && (
-                          <div className={`flex gap-1 mt-1 flex-wrap ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
-                            {Object.entries(chat.reactions).map(([emoji, users]) => {
-                                if (!users || users.length === 0) return null;
-                                const isReactedByMe = users.includes(user?.id);
-                                return (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => addReaction(chat.id, emoji)}
-                                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
-                                      isReactedByMe 
-                                        ? 'bg-blue-500/20 border-blue-500/50 text-blue-200' 
-                                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
-                                    }`}
-                                  >
-                                    <span>{emoji}</span>
-                                    <span className="opacity-70">{users.length}</span>
-                                  </button>
-                                );
-                            })}
+                // Check if next message is from same sender (for tighter grouping)
+                const nextMessage =
+                  index < messages.length - 1 ? messages[index + 1] : null;
+                const isLastInGroup =
+                  !nextMessage ||
+                  nextMessage.sender_id !== chat.sender_id ||
+                  isNewTimeGroup(nextMessage, chat);
+
+                // Check if first in group (for rounded corners)
+                const isFirstInGroup =
+                  !prevMessage ||
+                  prevMessage.sender_id !== chat.sender_id ||
+                  showTimeSeparator;
+
+                // Determine border radius based on position in group
+                const getBorderRadius = () => {
+                  if (isCurrentUser) {
+                    // Right side messages (sent by me)
+                    if (isFirstInGroup && isLastInGroup) return "rounded-3xl"; // Single message
+                    if (isFirstInGroup) return "rounded-3xl rounded-br-lg"; // First in group
+                    if (isLastInGroup) return "rounded-3xl rounded-tr-lg"; // Last in group
+                    return "rounded-3xl rounded-r-lg"; // Middle message
+                  } else {
+                    // Left side messages (received)
+                    if (isFirstInGroup && isLastInGroup) return "rounded-3xl"; // Single message
+                    if (isFirstInGroup) return "rounded-3xl rounded-bl-lg"; // First in group
+                    if (isLastInGroup) return "rounded-3xl rounded-tl-lg"; // Last in group
+                    return "rounded-3xl rounded-l-lg"; // Middle message
+                  }
+                };
+
+                return (
+                  <div key={chat.id}>
+                    {/* Day separator - shows when date changes */}
+                    {showDaySeparator && (
+                      <div className="flex justify-center my-4">
+                        <span className="text-[11px] text-gray-400 bg-white/5 px-4 py-1.5 rounded-full font-medium">
+                          {formatDaySeparator(chat.created_at)}
+                        </span>
+                      </div>
+                    )}
+
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ duration: 0.15 }}
+                      className={`flex gap-2 ${
+                        isLastInGroup ? "mb-2" : "mb-0.5"
+                      } ${isCurrentUser ? "flex-row-reverse" : "flex-row"}`}
+                    >
+                      <div
+                        className={`flex flex-col ${
+                          isCurrentUser ? "items-end" : "items-start"
+                        } max-w-[70%]`}
+                      >
+                        <div className="relative group w-full">
+                          <div
+                            onClick={() => handleMessageClick(chat.id)}
+                            className={`px-4 py-2 ${getBorderRadius()} break-words whitespace-pre-wrap overflow-hidden cursor-pointer select-none ${
+                              isCurrentUser
+                                ? "bg-white/5 text-white"
+                                : "bg-white/30 text-white"
+                            } ${isPending ? "opacity-70" : ""} ${
+                              isFailed ? "message-failed" : ""
+                            }`}
+                          >
+                            {chat.attachments &&
+                              chat.attachments.length > 0 && (
+                                <div className="mb-2">
+                                  {chat.attachments.map((att, index) =>
+                                    att.type === "image" ? (
+                                      <div
+                                        key={index}
+                                        className="relative group/image inline-block"
+                                      >
+                                        <img
+                                          src={att.url}
+                                          alt="Attachment"
+                                          className="max-w-[200px] rounded-lg border border-white/10 cursor-pointer hover:opacity-90 transition-opacity"
+                                          onClick={() =>
+                                            setSelectedImage(att.url)
+                                          }
+                                        />
+                                        <a
+                                          href={att.url}
+                                          download
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover/image:opacity-100 transition-opacity"
+                                          onClick={(e) => e.stopPropagation()}
+                                          title="Download"
+                                        >
+                                          <Download className="w-4 h-4" />
+                                        </a>
+                                      </div>
+                                    ) : (
+                                      <div
+                                        key={index}
+                                        className="relative group/file"
+                                      >
+                                        <a
+                                          href={att.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-3 bg-black/20 hover:bg-black/30 p-3 rounded-lg border border-white/10 transition-colors"
+                                        >
+                                          <div className="p-2 bg-white/10 rounded-lg">
+                                            <FileText className="w-5 h-5 text-white" />
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-white truncate">
+                                              {att.name || "File"}
+                                            </p>
+                                            <p className="text-xs text-gray-400">
+                                              {(att.size / 1024).toFixed(1)} KB
+                                            </p>
+                                          </div>
+                                        </a>
+                                        <a
+                                          href={att.url}
+                                          download
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="absolute top-1/2 -translate-y-1/2 right-2 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white opacity-0 group-hover/file:opacity-100 transition-opacity"
+                                          title="Download"
+                                        >
+                                          <Download className="w-4 h-4" />
+                                        </a>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              )}
+                            <div className="flex items-center gap-1">
+                              <p
+                                className={`text-sm ${
+                                  chat.decryptionFailed
+                                    ? "text-red-400 italic"
+                                    : ""
+                                }`}
+                              >
+                                {chat.content}
+                              </p>
+                            </div>
                           </div>
+
+                          {/* Reaction Picker Trigger */}
+                          <div
+                            className={`absolute top-1/2 -translate-y-1/2 ${
+                              isCurrentUser ? "-left-8" : "-right-8"
+                            } opacity-0 group-hover:opacity-100 transition-opacity`}
+                          >
+                            <div className="relative group/picker">
+                              <button className="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+                                <Smile className="w-4 h-4" />
+                              </button>
+                              <div
+                                className={`absolute bottom-full ${
+                                  isCurrentUser ? "right-0" : "left-0"
+                                } pb-2 hidden group-hover/picker:block z-10`}
+                              >
+                                <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex gap-1">
+                                  {["👍", "❤️", "😂", "😮", "😢", "🔥"].map(
+                                    (emoji) => (
+                                      <button
+                                        key={emoji}
+                                        onClick={() =>
+                                          addReaction(chat.id, emoji)
+                                        }
+                                        className="p-1.5 hover:bg-white/20 rounded-full text-lg transition-colors hover:scale-110"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Reactions Display */}
+                          {chat.reactions &&
+                            Object.keys(chat.reactions).length > 0 && (
+                              <div
+                                className={`flex gap-1 mt-1 flex-wrap ${
+                                  isCurrentUser
+                                    ? "justify-end"
+                                    : "justify-start"
+                                }`}
+                              >
+                                {Object.entries(chat.reactions).map(
+                                  ([emoji, users]) => {
+                                    if (!users || users.length === 0)
+                                      return null;
+                                    const isReactedByMe = users.includes(
+                                      user?.id
+                                    );
+                                    return (
+                                      <button
+                                        key={emoji}
+                                        onClick={() =>
+                                          addReaction(chat.id, emoji)
+                                        }
+                                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
+                                          isReactedByMe
+                                            ? "bg-blue-500/20 border-blue-500/50 text-blue-200"
+                                            : "bg-white/5 border-white/10 text-gray-300 hover:bg-white/10"
+                                        }`}
+                                      >
+                                        <span>{emoji}</span>
+                                        <span className="opacity-70">
+                                          {users.length}
+                                        </span>
+                                      </button>
+                                    );
+                                  }
+                                )}
+                              </div>
+                            )}
+                        </div>
+                        {/* Timestamp - only show on click, not for pending/sending */}
+                        {isTimestampVisible && !isPending && (
+                          <motion.span
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="text-[10px] text-gray-500 mt-1 px-2 flex items-center gap-1"
+                          >
+                            {isFailed ? (
+                              <span className="text-red-400">
+                                Failed to send
+                              </span>
+                            ) : (
+                              formatTime(chat.created_at)
+                            )}
+                          </motion.span>
                         )}
                       </div>
-                      <span className="text-[10px] text-gray-500 mt-1 px-2">
-                        {formatTime(chat.created_at)}
-                      </span>
-                    </div>
-                  </motion.div>
+                    </motion.div>
+                  </div>
                 );
               })}
               <div ref={messagesEndRef} />
@@ -336,17 +576,21 @@ export default function FriendChat() {
             >
               <Paperclip className="w-4 h-4" />
             </button>
-            
+
             {(previewUrl || selectedFile) && (
               <div className="relative group">
                 {previewUrl ? (
-                  <img src={previewUrl} alt="Preview" className="h-8 w-8 rounded object-cover border border-white/20" />
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="h-8 w-8 rounded object-cover border border-white/20"
+                  />
                 ) : (
                   <div className="h-8 w-8 rounded bg-white/10 flex items-center justify-center border border-white/20">
                     <FileText className="w-4 h-4 text-white" />
                   </div>
                 )}
-                <button 
+                <button
                   onClick={() => {
                     setSelectedFile(null);
                     setPreviewUrl(null);
@@ -368,15 +612,17 @@ export default function FriendChat() {
               onPaste={(e) => {
                 const items = e.clipboardData.items;
                 for (let i = 0; i < items.length; i++) {
-                  if (items[i].kind === 'file') {
+                  if (items[i].kind === "file") {
                     const file = items[i].getAsFile();
                     if (file) {
                       if (file.size > 5 * 1024 * 1024) {
-                        alert("File size too large. Please paste a file under 5MB.");
+                        alert(
+                          "File size too large. Please paste a file under 5MB."
+                        );
                         return;
                       }
                       setSelectedFile(file);
-                      if (file.type.startsWith('image/')) {
+                      if (file.type.startsWith("image/")) {
                         setPreviewUrl(URL.createObjectURL(file));
                       } else {
                         setPreviewUrl(null);
@@ -399,10 +645,7 @@ export default function FriendChat() {
           </div>
         </div>
       </div>
-      <ImageModal 
-        src={selectedImage} 
-        onClose={() => setSelectedImage(null)} 
-      />
+      <ImageModal src={selectedImage} onClose={() => setSelectedImage(null)} />
     </div>
   );
 }

@@ -45,3 +45,5 @@ next-env.d.ts
 /src/generated/prisma
 
 /.github/instructions/rules of coding.instructions.md
+
+.VsCodeCounter
