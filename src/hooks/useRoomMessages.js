@@ -117,6 +117,22 @@ export function useRoomMessages(roomId) {
           }, 3000);
         }
       })
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "Message",
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === payload.new.id ? { ...msg, ...payload.new } : msg
+            )
+          );
+        }
+      )
       .subscribe();
 
     return () => {
@@ -134,5 +150,20 @@ export function useRoomMessages(roomId) {
     });
   };
 
-  return { messages, isLoading, sendMessage, messagesEndRef, typingUsers, sendTyping };
+  const addReaction = async (messageId, emoji) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase.rpc("toggle_room_message_reaction", {
+        p_message_id: messageId,
+        p_user_id: user.id,
+        p_emoji: emoji,
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error toggling reaction:", error);
+    }
+  };
+
+  return { messages, isLoading, sendMessage, messagesEndRef, typingUsers, sendTyping, addReaction };
 }

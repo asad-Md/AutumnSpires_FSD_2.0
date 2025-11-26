@@ -3,7 +3,7 @@
 import { useChatStore } from "@/store/chatStore";
 import { useUserStore } from "@/store/userStore";
 import { useFriendChat } from "@/hooks/useFriendChat";
-import { X, Send, UserMinus } from "lucide-react";
+import { X, Send, UserMinus, Smile } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
@@ -13,7 +13,7 @@ export default function FriendChat() {
   const [message, setMessage] = useState("");
   
   // Use the hook for real data
-  const { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping } = useFriendChat(selectedChat?.id);
+  const { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction } = useFriendChat(selectedChat?.id);
 
   const handleUnfriend = async () => {
     if (
@@ -131,14 +131,62 @@ export default function FriendChat() {
                         isCurrentUser ? "items-end" : "items-start"
                       } max-w-[70%]`}
                     >
-                      <div
-                        className={`px-4 py-2 rounded-3xl ${
-                          isCurrentUser
-                            ? "bg-white/5 text-white"
-                            : "bg-white/30 text-white"
-                        }`}
-                      >
-                        <p className="text-sm">{chat.content}</p>
+                      <div className="relative group">
+                        <div
+                          className={`px-4 py-2 rounded-3xl ${
+                            isCurrentUser
+                              ? "bg-white/5 text-white"
+                              : "bg-white/30 text-white"
+                          }`}
+                        >
+                          <p className="text-sm">{chat.content}</p>
+                        </div>
+                        
+                        {/* Reaction Picker Trigger */}
+                        <div className={`absolute top-1/2 -translate-y-1/2 ${isCurrentUser ? '-left-8' : '-right-8'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                          <div className="relative group/picker">
+                            <button className="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+                              <Smile className="w-4 h-4" />
+                            </button>
+                          <div className={`absolute bottom-full ${isCurrentUser ? 'right-0' : 'left-0'} pb-2 hidden group-hover/picker:block z-10`}>
+                            <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex gap-1">
+                              {["👍", "❤️", "😂", "😮", "😢", "🔥"].map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => addReaction(chat.id, emoji)}
+                                  className="p-1.5 hover:bg-white/20 rounded-full text-lg transition-colors hover:scale-110"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          </div>
+                        </div>
+
+                        {/* Reactions Display */}
+                        {chat.reactions && Object.keys(chat.reactions).length > 0 && (
+                          <div className={`flex gap-1 mt-1 flex-wrap ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
+                            {Object.entries(chat.reactions).map(([emoji, users]) => {
+                                if (!users || users.length === 0) return null;
+                                const isReactedByMe = users.includes(user?.id);
+                                return (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => addReaction(chat.id, emoji)}
+                                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
+                                      isReactedByMe 
+                                        ? 'bg-blue-500/20 border-blue-500/50 text-blue-200' 
+                                        : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                                    }`}
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="opacity-70">{users.length}</span>
+                                  </button>
+                                );
+                            })}
+                          </div>
+                        )}
                       </div>
                       <span className="text-[10px] text-gray-500 mt-1 px-2">
                         {formatTime(chat.created_at)}

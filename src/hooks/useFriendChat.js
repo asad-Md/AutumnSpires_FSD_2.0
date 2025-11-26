@@ -237,5 +237,20 @@ export function useFriendChat(friendId) {
     });
   };
 
-  return { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping };
+  const addReaction = async (messageId, emoji) => {
+    if (!user) return;
+    try {
+      const { error } = await supabase.rpc("toggle_chat_reaction", {
+        p_message_id: messageId,
+        p_user_id: user.id,
+        p_emoji: emoji,
+      });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Error toggling reaction:", error);
+    }
+  };
+
+  return { messages, isLoading, sendMessage, messagesEndRef, isTyping, sendTyping, addReaction };
 }

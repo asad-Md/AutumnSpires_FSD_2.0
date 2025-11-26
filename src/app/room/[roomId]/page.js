@@ -5,7 +5,7 @@ import { useSnackbar } from "@/store/snackbarStore";
 import { useUserStore } from "@/store/userStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useRoomMessages } from "@/hooks/useRoomMessages";
-import { X, Share2, Copy, Mic, MicOff, Video as VideoIcon, VideoOff, Send, MessageSquare, ChevronLeft, Grid } from "lucide-react";
+import { X, Share2, Copy, Mic, MicOff, Video as VideoIcon, VideoOff, Send, MessageSquare, ChevronLeft, Grid, Smile } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useParams, useRouter } from "next/navigation";
 import useRoomStore from "@/store/roomStore";
@@ -62,7 +62,7 @@ export default function RoomPage() {
   const { localStream, peers, toggleAudio, toggleVideo, onlineUsers } = useWebRTC(roomId);
   
   // Chat Hook
-  const { messages, isLoading: messagesLoading, sendMessage, messagesEndRef, typingUsers, sendTyping } = useRoomMessages(roomId);
+  const { messages, isLoading: messagesLoading, sendMessage, messagesEndRef, typingUsers, sendTyping, addReaction } = useRoomMessages(roomId);
   
   const [newMessage, setNewMessage] = useState("");
   const [isMuted, setIsMuted] = useState(false);
@@ -294,12 +294,60 @@ export default function RoomPage() {
                     <div className="flex items-baseline gap-2 mb-1">
                       <span className="text-[10px] text-gray-400">{msg.sender?.username || "Unknown"}</span>
                     </div>
-                    <div className={`px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words ${
-                      msg.user_id === user?.id 
-                        ? 'bg-blue-500/40 text-white rounded-tr-sm' 
-                        : 'bg-white/10 text-gray-200 rounded-tl-sm'
-                    }`}>
-                      {msg.content}
+                    <div className="relative group">
+                      <div className={`px-3 py-2 rounded-2xl text-sm max-w-[90%] break-words ${
+                        msg.user_id === user?.id 
+                          ? 'bg-blue-500/40 text-white rounded-tr-sm' 
+                          : 'bg-white/10 text-gray-200 rounded-tl-sm'
+                      }`}>
+                        {msg.content}
+                      </div>
+
+                      {/* Reaction Picker Trigger */}
+                      <div className={`absolute top-1/2 -translate-y-1/2 ${msg.user_id === user?.id ? '-left-8' : '-right-8'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                        <div className="relative group/picker">
+                          <button className="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+                            <Smile className="w-4 h-4" />
+                          </button>
+                          <div className={`absolute bottom-full ${msg.user_id === user?.id ? 'right-0' : 'left-0'} pb-2 hidden group-hover/picker:block z-10`}>
+                            <div className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-full p-1 flex gap-1">
+                              {["👍", "❤️", "😂", "😮", "😢", "🔥"].map(emoji => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => addReaction(msg.id, emoji)}
+                                  className="p-1.5 hover:bg-white/20 rounded-full text-lg transition-colors hover:scale-110"
+                                >
+                                  {emoji}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Reactions Display */}
+                      {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                        <div className={`flex gap-1 mt-1 flex-wrap ${msg.user_id === user?.id ? 'justify-end' : 'justify-start'}`}>
+                          {Object.entries(msg.reactions).map(([emoji, users]) => {
+                              if (!users || users.length === 0) return null;
+                              const isReactedByMe = users.includes(user?.id);
+                              return (
+                                <button
+                                  key={emoji}
+                                  onClick={() => addReaction(msg.id, emoji)}
+                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs border transition-colors ${
+                                    isReactedByMe 
+                                      ? 'bg-blue-500/20 border-blue-500/50 text-blue-200' 
+                                      : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                                  }`}
+                                >
+                                  <span>{emoji}</span>
+                                  <span className="opacity-70">{users.length}</span>
+                                </button>
+                              );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))
